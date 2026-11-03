@@ -23,10 +23,10 @@ export function printTicket(ticket) {
   const rows = ticket.lines
     .map(
       (line) => `<tr>
-        <td>${money(line.cantidad)}</td>
-        <td>${ticketText(line.descripcion)}</td>
-        <td>${money(line.refUnit)}</td>
-        <td>${line.montoBs === null ? "—" : money(line.montoBs)}</td>
+        <td class="qty">${money(line.cantidad)}</td>
+        <td class="desc">${ticketText(line.descripcion)}</td>
+        <td class="num">${money(line.refUnit)}</td>
+        <td class="num">${line.montoBs === null ? "—" : money(line.montoBs)}</td>
       </tr>`
     )
     .join("");
@@ -35,13 +35,38 @@ export function printTicket(ticket) {
   const html = `<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8"><title>Ticket ${ticket.correlativo}</title>
 <style>
-  body { font-family: "Segoe UI", sans-serif; color: #111; width: 78mm; margin: 0 auto; }
-  h1 { font-size: 16px; text-align: center; margin: 0.2rem 0; }
-  img { display: block; width: 42mm; margin: 0 auto 0.4rem; }
-  p, td, th { font-size: 12px; }
-  table { width: 100%; border-collapse: collapse; }
-  td, th { text-align: left; padding: 2px 0; border-bottom: 1px solid #ddd; }
-  .right { text-align: right; }
+  @page { size: 80mm auto; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body {
+    width: 80mm;
+    max-width: 80mm;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+  }
+  body {
+    font-family: "Consolas", "Courier New", monospace;
+    color: #000;
+    padding: 2mm 3mm 4mm;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  h1 { font-size: 13px; text-align: center; margin: 1mm 0 2mm; letter-spacing: 0.4px; }
+  img { display: block; width: 36mm; max-width: 100%; height: auto; margin: 0 auto 1.5mm; }
+  p { font-size: 10px; line-height: 1.25; margin: 0 0 1.5mm; word-wrap: break-word; overflow-wrap: anywhere; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 1mm 0 2mm; }
+  th, td { font-size: 9px; line-height: 1.2; padding: 1mm 0.5mm; border-bottom: 1px dashed #999; vertical-align: top; }
+  th { text-align: left; font-weight: 700; border-bottom: 1px solid #000; }
+  .qty { width: 11%; text-align: right; white-space: nowrap; }
+  .desc { width: 45%; word-wrap: break-word; overflow-wrap: anywhere; }
+  .num { width: 22%; text-align: right; white-space: nowrap; }
+  .totals { text-align: right; font-size: 11px; margin: 2mm 0; }
+  .totals strong { display: block; }
+  .thanks { text-align: center; font-size: 11px; font-weight: 700; margin: 3mm 0 1mm; }
+  .rule { border: 0; border-top: 1px dashed #000; margin: 2mm 0; }
+  @media print {
+    html, body { width: 80mm; max-width: 80mm; }
+  }
 </style></head><body>
   <img src="/static/img/amircars/logo.png" alt="AMIRCARS">
   <h1>AMIRCARS</h1>
@@ -49,10 +74,12 @@ export function printTicket(ticket) {
   <p>Cliente: ${ticketText(ticket.cliente)}<br>Cédula/RIF: ${ticketText(ticket.documento || "—")}</p>
   <p>Tasa: ${ticket.tasa ? `${money(ticket.tasa)} Bs/USD` : "sin tasa"}</p>
   <table>
-    <thead><tr><th>Cant.</th><th>Descripción</th><th>REF</th><th>Bs</th></tr></thead>
+    <thead><tr><th class="qty">Cant</th><th class="desc">Descripción</th><th class="num">REF</th><th class="num">Bs</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <p class="right"><strong>Total ${money(totalRef)} REF</strong><br><strong>${ticket.tasa ? `${money(totalBs)} Bs` : "Bs pendiente de tasa"}</strong></p>
+  <p class="totals"><strong>Total ${money(totalRef)} REF</strong><strong>${ticket.tasa ? `${money(totalBs)} Bs` : "Bs pendiente de tasa"}</strong></p>
+  <hr class="rule">
+  <p class="thanks">Gracias por su compra.</p>
 </body></html>`;
   document.getElementById("amircars-ticket")?.remove();
   const frame = document.createElement("iframe");

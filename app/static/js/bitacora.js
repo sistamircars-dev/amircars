@@ -13,7 +13,7 @@ import {
   voidSalidaTicket,
 } from "./movements.js?v=49";
 import { promptJustification } from "./promptJustification.js?v=49";
-import { printTicket } from "./salidas.js?v=49";
+import { printTicket } from "./salidas.js?v=50";
 
 const HEADERS = ["Fecha", "Tipo", "Cantidad", "Descripción", "Documento", "REF", "Bs", "Motivo", "Acciones"];
 const TIPOS = { entrada: "Entrada", salida: "Salida", falla: "Falla" };

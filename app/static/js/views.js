@@ -5,7 +5,7 @@ import { renderFallas } from "./fallas.js?v=40";
 import { renderInventory } from "./inventory.js?v=54";
 import { renderPedidos } from "./pedidos.js?v=40";
 import { renderProveedores } from "./proveedores.js?v=54";
-import { renderSalidas } from "./salidas.js?v=49";
+import { renderSalidas } from "./salidas.js?v=50";
 import { renderTaxonomy } from "./taxonomy.js?v=37";
 
 export const VIEWS = {
