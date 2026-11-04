@@ -648,6 +648,7 @@ export async function runSync(force = false) {
     if (!sessionOk) {
       throw new Error("Sesión expirada; vuelva a entrar.");
     }
+    await discardPurgedTestData();
     try {
       await flushMedia();
     } catch (_err) {
@@ -674,6 +675,7 @@ export async function runSync(force = false) {
         throw err;
       }
     }
+    await discardPurgedTestData();
     await restoreActiveCloudPhotos();
     await hydratePublishedPhotos();
     try {
@@ -707,6 +709,51 @@ export async function runSync(force = false) {
   }
 }
 
+const PURGED_TEST_IDS = {
+  proveedores: [
+    "7b4fd608-db93-4090-9602-db8bb34e7082", // P-NORTE
+    "ea1bea0d-0fe8-4e81-a5b6-d18940a47ffa", // 552255
+    "168c1504-64a8-4b8c-aba5-7a2861fdcf62", // 455221663
+    "c915589a-c2e1-46fd-bf8d-3fd29069887a", // P-SUR
+  ],
+  productos: [
+    "f70fedee-47c0-4ae5-af98-43819b9d1c0f", // FLT-1
+    "b53c8ae7-abf8-4c80-af47-fcfac0f0e44c", // 52156
+    "96c1c2dd-4975-429e-8c98-7764ae9b2dda", // 77553
+  ],
+};
+
+async function discardPurgedTestData() {
+  const productIds = PURGED_TEST_IDS.productos;
+  const providerIds = PURGED_TEST_IDS.proveedores;
+  const dropEntity = async (id) => {
+    const queued = await db.sync_queue.where("entity_id").equals(id).toArray();
+    for (const row of queued) {
+      await db.sync_queue.delete(row.id);
+    }
+  };
+  for (const id of productIds) {
+    await db.historico_ref.where("producto_id").equals(id).delete();
+    await db.solicitudes_restock.where("producto_id").equals(id).delete();
+    await db.producto_imagenes.where("producto_id").equals(id).delete();
+    await db.producto_proveedores.where("producto_id").equals(id).delete();
+    await db.movimientos_inventario.where("producto_id").equals(id).delete();
+    await db.offline_media_queue.where("producto_id").equals(id).delete();
+    await db.productos.delete(id);
+    await dropEntity(id);
+  }
+  for (const id of providerIds) {
+    await db.producto_proveedores.where("proveedor_id").equals(id).delete();
+    const moves = await db.movimientos_inventario.where("proveedor_id").equals(id).toArray();
+    for (const move of moves) {
+      await db.movimientos_inventario.delete(move.id);
+      await dropEntity(move.id);
+    }
+    await db.proveedores.delete(id);
+    await dropEntity(id);
+  }
+}
+
 export function startSyncEngine() {
   bindRetry(() => {
     runSync(true);
@@ -728,7 +775,11 @@ export function startSyncEngine() {
   timer = setInterval(() => {
     runSync(false);
   }, HEARTBEAT_MS);
-  refreshOfflineBadge().then(() => runSync(true));
+  discardPurgedTestData()
+    .catch(() => {})
+    .finally(() => {
+      refreshOfflineBadge().then(() => runSync(true));
+    });
 }
 
 export async function publishPhotosFromThisDevice() {
