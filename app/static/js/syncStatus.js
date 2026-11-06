@@ -45,10 +45,9 @@ export function bindRetry(handler) {
   if (!root) {
     return;
   }
+  root.style.cursor = "pointer";
+  root.title = root.title || "Clic para forzar sincronización";
   root.addEventListener("click", () => {
-    const state = root.dataset.state;
-    if (state === "retry" || state === "offline" || state === "pending") {
-      handler();
-    }
+    handler();
   });
 }

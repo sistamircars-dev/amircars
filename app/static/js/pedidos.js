@@ -71,6 +71,7 @@ function qtyKey(groupId, productId) {
 export async function renderPedidos(root) {
   const status = h("p", { class: "muted" }, "");
   const summary = h("p", { class: "muted order-summary" }, "");
+  const lowStockBadge = h("p", { class: "muted order-low-stock", id: "pedidos-low-stock" }, "Bajo stock: …");
   const chips = h("div", { class: "word-chips" });
   const listHost = h("div", { class: "table-wrap" });
   const searchInput = h("input", {
@@ -137,6 +138,22 @@ export async function renderPedidos(root) {
     return groups.reduce((sum, group) => sum + groupTotal(group), 0);
   }
 
+  function isLowStock(item) {
+    return num(item.product.stock) <= num(item.minimum);
+  }
+
+  function lowStockCount() {
+    const seen = new Set();
+    groups.forEach((group) => {
+      group.items.forEach((item) => {
+        if (isLowStock(item)) {
+          seen.add(item.product.id);
+        }
+      });
+    });
+    return seen.size;
+  }
+
   function updateTotals() {
     groups.forEach((group) => {
       const el = totalEls.get(group.id);
@@ -146,9 +163,20 @@ export async function renderPedidos(root) {
     });
     const units = grandTotal();
     const lines = orderedLines();
+    const low = lowStockCount();
+    const lowTxt =
+      low > 0
+        ? `${low} artículo${low === 1 ? "" : "s"} en bajo stock (van primero en la lista). `
+        : "Ningún artículo en bajo stock. ";
     summary.textContent = units
-      ? `Pedido: ${units} unidad${units === 1 ? "" : "es"} en ${lines} línea${lines === 1 ? "" : "s"}. Cero no se pide.`
-      : "Coloque una cantidad para totalizar el pedido. Deje 0 si no se pide.";
+      ? `${lowTxt}Pedido: ${units} unidad${units === 1 ? "" : "es"} en ${lines} línea${lines === 1 ? "" : "s"}. Cero no se pide.`
+      : `${lowTxt}Coloque una cantidad para totalizar el pedido. Deje 0 si no se pide.`;
+    if (lowStockBadge) {
+      lowStockBadge.textContent =
+        low > 0
+          ? `Bajo stock: ${low} artículo${low === 1 ? "" : "s"} (listados al inicio).`
+          : "Bajo stock: 0";
+    }
     askButtons.forEach((button) => {
       const group = groups.find((item) => item.id === button.dataset.group);
       button.disabled = !group || groupTotal(group) < 1;
@@ -306,6 +334,7 @@ export async function renderPedidos(root) {
             "tbody",
             {},
             ...group.items.map((item) => {
+              const low = isLowStock(item);
               const input = h("input", {
                 class: "app-input order-qty",
                 type: "number",
@@ -323,8 +352,8 @@ export async function renderPedidos(root) {
               });
               return h(
                 "tr",
-                { class: num(item.product.stock) <= 0 ? "stock-zero" : "" },
-                h("td", {}, productLabel(item.product)),
+                { class: num(item.product.stock) <= 0 ? "stock-zero" : low ? "stock-low" : "" },
+                h("td", {}, low ? `${productLabel(item.product)} · bajo stock` : productLabel(item.product)),
                 h("td", {}, String(item.product.stock ?? 0)),
                 h("td", {}, String(item.minimum)),
                 h("td", {}, input)
@@ -445,9 +474,23 @@ export async function renderPedidos(root) {
         });
       }
     }
-    groups = [...byProvider.values()].sort((a, b) => providerLabel(a.provider).localeCompare(providerLabel(b.provider), "es"));
+    groups = [...byProvider.values()].sort((a, b) => {
+      const aLow = a.items.some((item) => isLowStock(item)) ? 0 : 1;
+      const bLow = b.items.some((item) => isLowStock(item)) ? 0 : 1;
+      if (aLow !== bLow) {
+        return aLow - bLow;
+      }
+      return providerLabel(a.provider).localeCompare(providerLabel(b.provider), "es");
+    });
     groups.forEach((group) => {
-      group.items.sort((a, b) => productLabel(a.product).localeCompare(productLabel(b.product), "es"));
+      group.items.sort((a, b) => {
+        const aLow = isLowStock(a) ? 0 : 1;
+        const bLow = isLowStock(b) ? 0 : 1;
+        if (aLow !== bLow) {
+          return aLow - bLow;
+        }
+        return productLabel(a.product).localeCompare(productLabel(b.product), "es");
+      });
     });
     paint();
   }
@@ -458,8 +501,8 @@ export async function renderPedidos(root) {
   });
 
   root.replaceChildren(
-    h("div", { class: "view-title" }, h("h2", {}, "Sugerencia de pedido")),
-    h("p", { class: "muted" }, "El stock mínimo se ajusta en Proveedores. Aquí se pide la cantidad; 0 no entra al pedido."),
+    h("div", { class: "view-title" }, h("h2", {}, "Sugerencia de pedido"), lowStockBadge),
+    h("p", { class: "muted" }, "El stock mínimo se ajusta en Proveedores. Aquí se pide la cantidad; 0 no entra al pedido. Los de bajo stock van primero."),
     h("div", { class: "hero-search" }, h("div", { class: "search-wrap" }, searchInput, chips)),
     summary,
     status,

@@ -228,6 +228,10 @@
   background: rgba(213, 219, 227, 0.1);
 }
 
+.data-table tr.stock-low td {
+  background: rgba(217, 4, 41, 0.1);
+}
+
 .data-table tr.stock-zero,
 .data-table tr.supplier-row {
   cursor: pointer;

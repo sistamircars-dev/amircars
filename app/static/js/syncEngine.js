@@ -8,10 +8,15 @@ import { setConfig } from "./store.js";
 import { bindRetry, setSyncStatus } from "./syncStatus.js";
 
 const BATCH = 40;
-const HEARTBEAT_MS = 25000;
+const HEARTBEAT_MS = 15000;
+const DIRTY_DEBOUNCE_MS = 700;
+const SYNC_WATCHDOG_MS = 90000;
 const REFRESH_LEAD_MS = 5 * 60 * 1000;
 let running = false;
+let queuedForce = false;
 let timer = null;
+let dirtyTimer = null;
+let startedAt = 0;
 
 function isOnline() {
   return navigator.onLine;
@@ -631,13 +636,23 @@ async function statusFromCounts(counts, hint = "") {
 
 export async function runSync(force = false) {
   if (running) {
-    return;
+    if (force) {
+      queuedForce = true;
+      if (startedAt && Date.now() - startedAt > SYNC_WATCHDOG_MS) {
+        running = false;
+      } else {
+        return;
+      }
+    } else {
+      return;
+    }
   }
   if (!isOnline() && !force) {
     await refreshOfflineBadge();
     return;
   }
   running = true;
+  startedAt = Date.now();
   setSyncStatus("syncing");
   try {
     const alive = await healthCheck();
@@ -706,7 +721,24 @@ export async function runSync(force = false) {
     }
   } finally {
     running = false;
+    startedAt = 0;
+    if (queuedForce) {
+      queuedForce = false;
+      window.setTimeout(() => {
+        runSync(true);
+      }, 50);
+    }
   }
+}
+
+function scheduleDirtySync() {
+  if (dirtyTimer) {
+    clearTimeout(dirtyTimer);
+  }
+  dirtyTimer = setTimeout(() => {
+    dirtyTimer = null;
+    runSync(true);
+  }, DIRTY_DEBOUNCE_MS);
 }
 
 const PURGED_TEST_IDS = {
@@ -758,6 +790,9 @@ export function startSyncEngine() {
   bindRetry(() => {
     runSync(true);
   });
+  window.addEventListener("amircars:dirty", () => {
+    scheduleDirtySync();
+  });
   window.addEventListener("online", () => {
     runSync(true);
   });
@@ -773,7 +808,7 @@ export function startSyncEngine() {
     clearInterval(timer);
   }
   timer = setInterval(() => {
-    runSync(false);
+    runSync(true);
   }, HEARTBEAT_MS);
   discardPurgedTestData()
     .catch(() => {})

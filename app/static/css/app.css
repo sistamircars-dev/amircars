@@ -323,6 +323,12 @@ textarea.app-input {
   margin: 0;
 }
 
+.order-low-stock {
+  margin: 0;
+  font-weight: 600;
+  color: #ffb4b4;
+}
+
 .muted {
   color: var(--muted);
 }

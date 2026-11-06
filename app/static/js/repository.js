@@ -54,6 +54,11 @@ export async function enqueue(table, op, record) {
     attempts: 0,
     last_error: null,
   });
+  try {
+    window.dispatchEvent(new CustomEvent("amircars:dirty", { detail: { table, op, id: payload.id } }));
+  } catch (_err) {
+    /* Entorno sin window (tests). */
+  }
 }
 
 export async function saveLocal(table, data, op = "insert") {
