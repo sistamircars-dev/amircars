@@ -755,15 +755,85 @@ const PURGED_TEST_IDS = {
   ],
 };
 
+const PURGED_PROVIDER_CODES = new Set(["p-norte", "p-sur", "552255", "455221663"]);
+const PURGED_PROVIDER_NAMES = [
+  "filtros norte",
+  "filtro norte",
+  "filtros sur",
+  "filtro sur",
+  "venamerican",
+  "yldemaro uribe",
+  "yldemaro",
+  "v-552255",
+];
+const PURGED_PRODUCT_CODES = new Set(["flt-1", "52156", "77553"]);
+
+function foldText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isPurgedProvider(row) {
+  if (!row || !row.id) {
+    return false;
+  }
+  if (PURGED_TEST_IDS.proveedores.includes(row.id)) {
+    return true;
+  }
+  const code = foldText(row.codigo_proveedor);
+  if (code && PURGED_PROVIDER_CODES.has(code)) {
+    return true;
+  }
+  const name = foldText(row.razon_social);
+  return PURGED_PROVIDER_NAMES.some((needle) => name === needle || name.includes(needle));
+}
+
+function isPurgedProduct(row, providerIds) {
+  if (!row || !row.id) {
+    return false;
+  }
+  if (PURGED_TEST_IDS.productos.includes(row.id)) {
+    return true;
+  }
+  const code = foldText(row.codigo);
+  if (code && PURGED_PRODUCT_CODES.has(code)) {
+    return true;
+  }
+  return Boolean(row.proveedor_id && providerIds.has(row.proveedor_id));
+}
+
 async function discardPurgedTestData() {
-  const productIds = PURGED_TEST_IDS.productos;
-  const providerIds = PURGED_TEST_IDS.proveedores;
   const dropEntity = async (id) => {
+    if (!id) {
+      return;
+    }
     const queued = await db.sync_queue.where("entity_id").equals(id).toArray();
     for (const row of queued) {
       await db.sync_queue.delete(row.id);
     }
   };
+
+  const providers = await db.proveedores.toArray();
+  const providerIds = new Set(providers.filter((row) => isPurgedProvider(row)).map((row) => row.id));
+  PURGED_TEST_IDS.proveedores.forEach((id) => providerIds.add(id));
+
+  const products = await db.productos.toArray();
+  const productIds = new Set(products.filter((row) => isPurgedProduct(row, providerIds)).map((row) => row.id));
+  PURGED_TEST_IDS.productos.forEach((id) => productIds.add(id));
+
+  const links = await db.producto_proveedores.toArray();
+  links
+    .filter((row) => providerIds.has(row.proveedor_id) || productIds.has(row.producto_id))
+    .forEach((row) => {
+      if (row.producto_id) {
+        productIds.add(row.producto_id);
+      }
+    });
+
   for (const id of productIds) {
     await db.historico_ref.where("producto_id").equals(id).delete();
     await db.solicitudes_restock.where("producto_id").equals(id).delete();
@@ -783,6 +853,18 @@ async function discardPurgedTestData() {
     }
     await db.proveedores.delete(id);
     await dropEntity(id);
+  }
+
+  // Quita de la cola cualquier push residual por nombre/código de prueba.
+  const queued = await db.sync_queue.toArray();
+  for (const row of queued) {
+    if (row.table === "proveedores" && isPurgedProvider(row.payload || { id: row.entity_id })) {
+      await db.sync_queue.delete(row.id);
+      continue;
+    }
+    if (row.table === "productos" && isPurgedProduct(row.payload || { id: row.entity_id }, providerIds)) {
+      await db.sync_queue.delete(row.id);
+    }
   }
 }
 
