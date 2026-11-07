@@ -1,6 +1,6 @@
 import { h } from "./dom.js";
 import { clearRouteParams, onNavigate } from "./nav.js";
-import { VIEWS } from "./views.js?v=57";
+import { VIEWS } from "./views.js?v=58";
 
 export async function startRouter() {
   const root = document.getElementById("view-root");

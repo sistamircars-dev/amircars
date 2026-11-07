@@ -1,4 +1,4 @@
-const CACHE = "amircars-offline-v53";
+const CACHE = "amircars-offline-v54";
 const PRECACHE = [
   "/offline.html",
   "/manifest.json",
@@ -10,6 +10,7 @@ const PRECACHE = [
   "/static/js/diskStore.js",
   "/static/js/archiveVault.js",
   "/static/js/api.js",
+  "/static/js/purgeCatalog.js",
   "/static/js/repository.js",
   "/static/js/syncStatus.js",
   "/static/js/syncEngine.js",

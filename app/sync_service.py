@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
@@ -11,6 +13,29 @@ from app.supabase_client import user_client
 from app.sync_tables import COLUMNS, IMMUTABLE_TABLES, STRIP_ON_PUSH, TABLE_ORDER
 
 _PULL_LIMIT = 1000
+_PURGED_PROVIDER_CODES = {"p-norte", "p-sur", "552255", "455221663"}
+_PURGED_PRODUCT_CODES = {"flt-1", "52156", "77553"}
+_PURGED_PROVIDER_RE = re.compile(
+    r"filtro[s]?\s*norte|filtro[s]?\s*sur|venamerican|yldemaro|\buribe\b|v-552255",
+    re.IGNORECASE,
+)
+
+
+def _fold_text(value: Any) -> str:
+    text = unicodedata.normalize("NFD", str(value or ""))
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def _is_purged_provider(row: dict[str, Any]) -> bool:
+    code = _fold_text(row.get("codigo_proveedor"))
+    if code in _PURGED_PROVIDER_CODES:
+        return True
+    return bool(_PURGED_PROVIDER_RE.search(_fold_text(row.get("razon_social"))))
+
+
+def _is_purged_product(row: dict[str, Any]) -> bool:
+    return _fold_text(row.get("codigo")) in _PURGED_PRODUCT_CODES
 
 
 def utc_now() -> str:
@@ -171,6 +196,13 @@ def apply_push(raw: dict[str, Any]) -> dict[str, Any]:
                 payload = {**payload, "is_active": False}
                 op = "update"
             row = sanitize_row(item.table, payload, item.id)
+            # Datos de prueba: aceptar en cliente para vaciar cola, sin escribir en nube.
+            if item.table == "proveedores" and _is_purged_provider(row):
+                accepted.append(item.id)
+                continue
+            if item.table == "productos" and _is_purged_product(row):
+                accepted.append(item.id)
+                continue
             if op == "delete":
                 _apply_delete(client, item.table, item.id, row)
                 accepted.append(item.id)

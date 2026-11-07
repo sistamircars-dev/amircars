@@ -11,6 +11,7 @@ import {
 import { createDateField } from "./dateField.js?v=34";
 import { promptJustification } from "./promptJustification.js?v=49";
 import { openProductForm } from "./productForm.js?v=53";
+import { discardPurgedTestData, isPurgedTestProvider } from "./purgeCatalog.js";
 import { deactivateLocal, saveLocal } from "./repository.js";
 
 function providerForm(existing) {
@@ -451,8 +452,11 @@ export async function renderProveedores(root) {
 
   async function refresh() {
     const token = ++refreshToken;
+    await discardPurgedTestData().catch(() => {});
     await backfillSupplierLinks();
-    const proveedores = (await db.proveedores.toArray()).sort((a, b) => a.razon_social.localeCompare(b.razon_social, "es"));
+    const proveedores = (await db.proveedores.toArray())
+      .filter((row) => row.is_active !== false && !isPurgedTestProvider(row))
+      .sort((a, b) => a.razon_social.localeCompare(b.razon_social, "es"));
     const productos = await db.productos.toArray();
     const links = await db.producto_proveedores.toArray();
     const moves = await db.movimientos_inventario.toArray();

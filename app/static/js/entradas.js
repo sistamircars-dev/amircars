@@ -6,6 +6,7 @@ import { h } from "./dom.js";
 import { ensureRateForDate } from "./bcvView.js?v=52";
 import { formatDisplayDate, formatRate, registerEntrada, todayLocal } from "./movements.js?v=52";
 import { mountLines } from "./opsLines.js?v=40";
+import { isPurgedTestProvider } from "./purgeCatalog.js";
 import { saveLocal } from "./repository.js";
 import { mountCampoEditor, retireCampo } from "./taxonomy.js?v=36";
 
@@ -35,7 +36,7 @@ function providerOptions(rows) {
 }
 
 export async function mountEntrada(host, { onSaved } = {}) {
-  const proveedores = (await db.proveedores.toArray()).filter((row) => row.is_active !== false);
+  const proveedores = (await db.proveedores.toArray()).filter((row) => row.is_active !== false && !isPurgedTestProvider(row));
   const categorias = await db.categorias.toArray();
   const subcategorias = await db.subcategorias.toArray();
   const llegada = createDateField({ value: todayLocal(), ariaLabel: "Fecha de llegada de la factura" });

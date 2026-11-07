@@ -3,9 +3,12 @@ import { flushCloudPurge } from "./archiveVault.js";
 import { db, ENTITY_TABLES, PUSH_ORDER, getMeta, nowIso, pendingCount, setMeta } from "./db.js";
 import { applyRemoteRevision } from "./pwa.js";
 import { applyPhotoIndex, collectPhotoIndex } from "./photoIndex.js";
+import { discardPurgedTestData, isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js";
 import { enqueue, saveLocal, SOFT_DELETE_TABLES } from "./repository.js";
 import { setConfig } from "./store.js";
 import { bindRetry, setSyncStatus } from "./syncStatus.js";
+
+export { discardPurgedTestData };
 
 const BATCH = 40;
 const IDLE_HEARTBEAT_MS = 15000;
@@ -617,6 +620,12 @@ async function mergePull(tables) {
       if (gone.has(row.id) || blocked.has(`${table}:${row.id}`)) {
         continue;
       }
+      if (table === "proveedores" && isPurgedTestProvider(row)) {
+        continue;
+      }
+      if (table === "productos" && isPurgedTestProduct(row)) {
+        continue;
+      }
       const local = await db.table(table).get(row.id);
       if (local && local.updated_at && row.updated_at && local.updated_at > row.updated_at) {
         if (table !== "movimientos_inventario") {
@@ -826,133 +835,6 @@ function scheduleDirtySync() {
     dirtyTimer = null;
     runSync(true);
   }, DIRTY_DEBOUNCE_MS);
-}
-
-const PURGED_TEST_IDS = {
-  proveedores: [
-    "7b4fd608-db93-4090-9602-db8bb34e7082", // P-NORTE
-    "ea1bea0d-0fe8-4e81-a5b6-d18940a47ffa", // 552255
-    "168c1504-64a8-4b8c-aba5-7a2861fdcf62", // 455221663
-    "c915589a-c2e1-46fd-bf8d-3fd29069887a", // P-SUR
-  ],
-  productos: [
-    "f70fedee-47c0-4ae5-af98-43819b9d1c0f", // FLT-1
-    "b53c8ae7-abf8-4c80-af47-fcfac0f0e44c", // 52156
-    "96c1c2dd-4975-429e-8c98-7764ae9b2dda", // 77553
-  ],
-};
-
-const PURGED_PROVIDER_CODES = new Set(["p-norte", "p-sur", "552255", "455221663"]);
-const PURGED_PROVIDER_NAMES = [
-  "filtros norte",
-  "filtro norte",
-  "filtros sur",
-  "filtro sur",
-  "venamerican",
-  "yldemaro uribe",
-  "yldemaro",
-  "v-552255",
-];
-const PURGED_PRODUCT_CODES = new Set(["flt-1", "52156", "77553"]);
-
-function foldText(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function isPurgedProvider(row) {
-  if (!row || !row.id) {
-    return false;
-  }
-  if (PURGED_TEST_IDS.proveedores.includes(row.id)) {
-    return true;
-  }
-  const code = foldText(row.codigo_proveedor);
-  if (code && PURGED_PROVIDER_CODES.has(code)) {
-    return true;
-  }
-  const name = foldText(row.razon_social);
-  return PURGED_PROVIDER_NAMES.some((needle) => name === needle || name.includes(needle));
-}
-
-function isPurgedProduct(row, providerIds) {
-  if (!row || !row.id) {
-    return false;
-  }
-  if (PURGED_TEST_IDS.productos.includes(row.id)) {
-    return true;
-  }
-  const code = foldText(row.codigo);
-  if (code && PURGED_PRODUCT_CODES.has(code)) {
-    return true;
-  }
-  return Boolean(row.proveedor_id && providerIds.has(row.proveedor_id));
-}
-
-async function discardPurgedTestData() {
-  const dropEntity = async (id) => {
-    if (!id) {
-      return;
-    }
-    const queued = await db.sync_queue.where("entity_id").equals(id).toArray();
-    for (const row of queued) {
-      await db.sync_queue.delete(row.id);
-    }
-  };
-
-  const providers = await db.proveedores.toArray();
-  const providerIds = new Set(providers.filter((row) => isPurgedProvider(row)).map((row) => row.id));
-  PURGED_TEST_IDS.proveedores.forEach((id) => providerIds.add(id));
-
-  const products = await db.productos.toArray();
-  const productIds = new Set(products.filter((row) => isPurgedProduct(row, providerIds)).map((row) => row.id));
-  PURGED_TEST_IDS.productos.forEach((id) => productIds.add(id));
-
-  const links = await db.producto_proveedores.toArray();
-  links
-    .filter((row) => providerIds.has(row.proveedor_id) || productIds.has(row.producto_id))
-    .forEach((row) => {
-      if (row.producto_id) {
-        productIds.add(row.producto_id);
-      }
-    });
-
-  for (const id of productIds) {
-    await db.historico_ref.where("producto_id").equals(id).delete();
-    await db.solicitudes_restock.where("producto_id").equals(id).delete();
-    await db.producto_imagenes.where("producto_id").equals(id).delete();
-    await db.producto_proveedores.where("producto_id").equals(id).delete();
-    await db.movimientos_inventario.where("producto_id").equals(id).delete();
-    await db.offline_media_queue.where("producto_id").equals(id).delete();
-    await db.productos.delete(id);
-    await dropEntity(id);
-  }
-  for (const id of providerIds) {
-    await db.producto_proveedores.where("proveedor_id").equals(id).delete();
-    const moves = await db.movimientos_inventario.where("proveedor_id").equals(id).toArray();
-    for (const move of moves) {
-      await db.movimientos_inventario.delete(move.id);
-      await dropEntity(move.id);
-    }
-    await db.proveedores.delete(id);
-    await dropEntity(id);
-  }
-
-  // Quita de la cola cualquier push residual por nombre/código de prueba.
-  const queued = await db.sync_queue.toArray();
-  for (const row of queued) {
-    if (row.table === "proveedores" && isPurgedProvider(row.payload || { id: row.entity_id })) {
-      await db.sync_queue.delete(row.id);
-      continue;
-    }
-    if (row.table === "productos" && isPurgedProduct(row.payload || { id: row.entity_id }, providerIds)) {
-      await db.sync_queue.delete(row.id);
-    }
-  }
 }
 
 export function startSyncEngine() {

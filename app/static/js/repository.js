@@ -1,4 +1,5 @@
 import { db, newId, nowIso } from "./db.js";
+import { isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js";
 
 const SYNC_STRIP = new Set(["local_blob", "thumbnail_url", "blob"]);
 
@@ -21,39 +22,14 @@ export const SOFT_DELETE_TABLES = new Set([
   "solicitudes_restock",
 ]);
 
-function foldSyncText(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function isBlockedTestProvider(record) {
-  const code = foldSyncText(record && record.codigo_proveedor);
-  const name = foldSyncText(record && record.razon_social);
-  if (["p-norte", "p-sur", "552255", "455221663"].includes(code)) {
-    return true;
-  }
-  return ["filtros norte", "filtro norte", "filtros sur", "filtro sur", "venamerican", "yldemaro uribe", "yldemaro", "v-552255"].some(
-    (needle) => name === needle || name.includes(needle)
-  );
-}
-
-function isBlockedTestProduct(record) {
-  const code = foldSyncText(record && record.codigo);
-  return ["flt-1", "52156", "77553"].includes(code);
-}
-
 export async function enqueue(table, op, record) {
   if (table === "movimientos_inventario" && op !== "insert") {
     return;
   }
-  if (table === "proveedores" && isBlockedTestProvider(record)) {
+  if (table === "proveedores" && isPurgedTestProvider(record)) {
     return;
   }
-  if (table === "productos" && isBlockedTestProduct(record)) {
+  if (table === "productos" && isPurgedTestProduct(record)) {
     return;
   }
   if (SOFT_DELETE_TABLES.has(table) && op === "delete") {

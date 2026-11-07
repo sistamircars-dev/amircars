@@ -1,4 +1,5 @@
 import { uploadMediaBlob } from "./api.js";
+import { isPurgedTestProvider } from "./purgeCatalog.js";
 import { db, newId, nowIso } from "./db.js";
 import { promptJustification } from "./promptJustification.js";
 import { queueOfflineImage, saveLocal } from "./repository.js";
@@ -84,13 +85,22 @@ export async function loadContext() {
     db.offline_media_queue.toArray(),
     getTasa(),
   ]);
+  const proveedoresVisibles = proveedores.filter((row) => row.is_active !== false && !isPurgedTestProvider(row));
   const byId = (rows) => new Map(rows.map((row) => [row.id, row]));
   return {
     categorias: byId(categorias),
     subcategorias: byId(subcategorias),
-    proveedores: byId(proveedores),
+    proveedores: byId(proveedoresVisibles),
     productos: byId(productos),
-    listas: { categorias, subcategorias, campos, proveedores, productos, imagenes, offline },
+    listas: {
+      categorias,
+      subcategorias,
+      campos,
+      proveedores: proveedoresVisibles,
+      productos,
+      imagenes,
+      offline,
+    },
     tasa,
   };
 }
