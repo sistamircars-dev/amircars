@@ -166,5 +166,10 @@ export async function queueOfflineImage(productoId, blob, filename, extra = {}) 
     last_error: null,
   };
   await db.offline_media_queue.put(item);
+  try {
+    window.dispatchEvent(new CustomEvent("amircars:dirty", { detail: { table: "offline_media_queue", op: "insert", id: item.id } }));
+  } catch (_err) {
+    /* Entorno sin window (tests). */
+  }
   return item;
 }

@@ -8,9 +8,12 @@ import { setConfig } from "./store.js";
 import { bindRetry, setSyncStatus } from "./syncStatus.js";
 
 const BATCH = 40;
-const HEARTBEAT_MS = 15000;
-const DIRTY_DEBOUNCE_MS = 700;
+const IDLE_HEARTBEAT_MS = 15000;
+const PENDING_HEARTBEAT_MS = 8000;
+const PENDING_BURST_MS = 2500;
+const DIRTY_DEBOUNCE_MS = 400;
 const SYNC_WATCHDOG_MS = 90000;
+const PHOTO_REPUBLISH_MS = 5 * 60 * 1000;
 const REFRESH_LEAD_MS = 5 * 60 * 1000;
 let running = false;
 let queuedForce = false;
@@ -211,8 +214,16 @@ async function restoreActiveCloudPhotos() {
 
 async function publishLocalCloudImages(force = false) {
   const mark = await getMeta("photos_published_rev", "");
-  if (!force && mark === "59") {
+  const lastForce = Number((await getMeta("photos_force_pub_at", 0)) || 0);
+  const due = !lastForce || Date.now() - lastForce >= PHOTO_REPUBLISH_MS;
+  if (!force && mark === "64") {
     return 0;
+  }
+  if (force && mark === "64" && !due) {
+    const media = await db.offline_media_queue.count();
+    if (!media) {
+      return 0;
+    }
   }
   const items = await collectPhotoIndex();
   const count = await applyPhotoIndex(items, { enqueue: true });
@@ -228,8 +239,52 @@ async function publishLocalCloudImages(force = false) {
       /* Índice auxiliar; las filas ya van en la cola. */
     }
   }
-  await setMeta("photos_published_rev", "59");
+  await setMeta("photos_published_rev", "64");
+  if (force) {
+    await setMeta("photos_force_pub_at", Date.now());
+  }
   return count;
+}
+
+/** Reencola filas locales más nuevas que el último pull (cambios que nunca entraron a sync_queue). */
+async function requeueLocalDrift() {
+  const since = await getMeta("last_pull_at", null);
+  if (!since) {
+    return 0;
+  }
+  const queued = await db.sync_queue.toArray();
+  const blocked = new Set(queued.map((row) => `${row.table}:${row.entity_id}`));
+  let added = 0;
+  for (const table of ENTITY_TABLES) {
+    if (table === "movimientos_inventario") {
+      continue;
+    }
+    const rows = await db.table(table).toArray();
+    for (const row of rows) {
+      if (!row || !row.id) {
+        continue;
+      }
+      const key = `${table}:${row.id}`;
+      if (blocked.has(key)) {
+        continue;
+      }
+      const stamp = String(row.updated_at || row.created_at || "");
+      if (!stamp || stamp <= String(since)) {
+        continue;
+      }
+      if (table === "producto_imagenes") {
+        const url = String(row.cloudinary_url || "").trim();
+        const pid = String(row.cloudinary_public_id || "").trim();
+        if (!url && !pid) {
+          continue;
+        }
+      }
+      await enqueue(table, "update", row);
+      blocked.add(key);
+      added += 1;
+    }
+  }
+  return added;
 }
 
 async function hydratePublishedPhotos() {
@@ -564,6 +619,9 @@ async function mergePull(tables) {
       }
       const local = await db.table(table).get(row.id);
       if (local && local.updated_at && row.updated_at && local.updated_at > row.updated_at) {
+        if (table !== "movimientos_inventario") {
+          await enqueue(table, "update", local);
+        }
         continue;
       }
       await db.table(table).put(row);
@@ -665,6 +723,11 @@ export async function runSync(force = false) {
     }
     await discardPurgedTestData();
     try {
+      await requeueLocalDrift();
+    } catch (_err) {
+      /* El push normal sigue con lo que haya en cola. */
+    }
+    try {
       await flushMedia();
     } catch (_err) {
       /* Las fotos no deben bloquear el resto de la sync. */
@@ -707,6 +770,9 @@ export async function runSync(force = false) {
     await applyRemoteRevision();
     const leftover = await pendingCount();
     await statusFromCounts(leftover);
+    if (leftover.total > 0) {
+      scheduleHeartbeat(PENDING_BURST_MS);
+    }
   } catch (err) {
     const counts = await pendingCount();
     const detail = String(err && err.message ? err.message : err);
@@ -719,6 +785,9 @@ export async function runSync(force = false) {
     } else {
       setSyncStatus("connected");
     }
+    if (counts.total > 0 && isOnline()) {
+      scheduleHeartbeat(PENDING_BURST_MS);
+    }
   } finally {
     running = false;
     startedAt = 0;
@@ -729,6 +798,24 @@ export async function runSync(force = false) {
       }, 50);
     }
   }
+}
+
+async function scheduleHeartbeat(delayMs = null) {
+  if (timer) {
+    clearTimeout(timer);
+    timer = null;
+  }
+  let wait = delayMs;
+  if (wait == null) {
+    const counts = await pendingCount().catch(() => ({ total: 0 }));
+    wait = counts.total > 0 ? PENDING_HEARTBEAT_MS : IDLE_HEARTBEAT_MS;
+  }
+  timer = window.setTimeout(() => {
+    timer = null;
+    runSync(true).finally(() => {
+      scheduleHeartbeat();
+    });
+  }, wait);
 }
 
 function scheduleDirtySync() {
@@ -881,17 +968,18 @@ export function startSyncEngine() {
   window.addEventListener("offline", () => {
     refreshOfflineBadge();
   });
+  window.addEventListener("focus", () => {
+    runSync(true);
+  });
+  window.addEventListener("pageshow", () => {
+    runSync(true);
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       runSync(true);
     }
   });
-  if (timer) {
-    clearInterval(timer);
-  }
-  timer = setInterval(() => {
-    runSync(true);
-  }, HEARTBEAT_MS);
+  scheduleHeartbeat(PENDING_BURST_MS);
   discardPurgedTestData()
     .catch(() => {})
     .finally(() => {
@@ -923,7 +1011,8 @@ export async function publishPhotosFromThisDevice() {
     } catch (_err) {
       /* next heartbeat */
     }
-    await setMeta("photos_published_rev", "59");
+    await setMeta("photos_published_rev", "64");
+    await setMeta("photos_force_pub_at", Date.now());
     const leftover = await pendingCount();
     await statusFromCounts(leftover);
     return { local: items.length, applied, upserted };
