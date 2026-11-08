@@ -1,4 +1,4 @@
-const CACHE = "amircars-offline-v54";
+const CACHE = "amircars-offline-v55";
 const PRECACHE = [
   "/offline.html",
   "/manifest.json",
@@ -82,6 +82,19 @@ self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
+});
+
+self.addEventListener("sync", (event) => {
+  if (event.tag !== "amircars-push") {
+    return;
+  }
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      clients.forEach((client) => {
+        client.postMessage({ type: "AMIRCARS_SYNC" });
+      });
+    })
+  );
 });
 
 self.addEventListener("fetch", (event) => {

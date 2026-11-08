@@ -1,8 +1,11 @@
 import { healthCheck, runtimeInfo } from "./api.js";
 
 const REVISION_KEY = "amircars-revision";
+const RELOAD_FLAG = "amircars-reloaded-for";
+const REVISION_POLL_MS = 45000;
 let deferredInstall = null;
 let reloading = false;
+let revisionTimer = null;
 
 function currentRevision() {
   return window.localStorage.getItem(REVISION_KEY) || "";
@@ -32,6 +35,18 @@ function reloadOnce() {
   window.location.reload();
 }
 
+async function clearAppCaches() {
+  if (!("caches" in window)) {
+    return;
+  }
+  try {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((key) => caches.delete(key)));
+  } catch (_err) {
+    /* Sin caches o sin permiso. */
+  }
+}
+
 async function waitForWorker(worker) {
   if (!worker) {
     return;
@@ -54,7 +69,10 @@ export async function registerServiceWorker() {
     return null;
   }
   try {
-    const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    const registration = await navigator.serviceWorker.register("/sw.js", {
+      scope: "/",
+      updateViaCache: "none",
+    });
     registration.addEventListener("updatefound", () => {
       const worker = registration.installing;
       if (!worker) {
@@ -73,6 +91,26 @@ export async function registerServiceWorker() {
   }
 }
 
+async function activateWaitingWorker(registration) {
+  if (!registration) {
+    return false;
+  }
+  if (registration.waiting) {
+    registration.waiting.postMessage({ type: "SKIP_WAITING" });
+    await waitForWorker(registration.waiting);
+    return true;
+  }
+  if (registration.installing) {
+    await waitForWorker(registration.installing);
+    if (registration.waiting) {
+      registration.waiting.postMessage({ type: "SKIP_WAITING" });
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Compara revisión del servidor y fuerza recarga automática (sin Ctrl+F5). */
 export async function applyRemoteRevision() {
   if (!navigator.onLine) {
     return { changed: false, offline: true };
@@ -82,23 +120,32 @@ export async function applyRemoteRevision() {
     return { changed: false };
   }
   const previous = currentRevision();
-  if (previous && previous !== info.revision) {
-    rememberRevision(info.revision);
+  const remote = String(info.revision);
+  if (previous && previous !== remote) {
+    const already = window.sessionStorage.getItem(RELOAD_FLAG);
+    if (already === remote) {
+      rememberRevision(remote);
+      return { changed: false, revision: remote };
+    }
+    window.sessionStorage.setItem(RELOAD_FLAG, remote);
+    rememberRevision(remote);
+    await clearAppCaches();
     if ("serviceWorker" in navigator) {
       const registration = await navigator.serviceWorker.getRegistration();
       if (registration) {
-        await registration.update();
-        if (registration.waiting) {
-          registration.waiting.postMessage({ type: "SKIP_WAITING" });
+        try {
+          await registration.update();
+        } catch (_err) {
+          /* Se recarga de todos modos. */
         }
-        await waitForWorker(registration.installing || registration.waiting);
+        await activateWaitingWorker(registration);
       }
     }
     reloadOnce();
-    return { changed: true, revision: info.revision };
+    return { changed: true, revision: remote };
   }
-  rememberRevision(info.revision);
-  return { changed: false, revision: info.revision };
+  rememberRevision(remote);
+  return { changed: false, revision: remote };
 }
 
 export async function refreshServiceWorker() {
@@ -109,11 +156,48 @@ export async function refreshServiceWorker() {
   if (!registration) {
     return registerServiceWorker();
   }
-  await registration.update();
-  if (registration.waiting) {
-    registration.waiting.postMessage({ type: "SKIP_WAITING" });
+  try {
+    await registration.update();
+  } catch (_err) {
+    return registration;
+  }
+  const activated = await activateWaitingWorker(registration);
+  if (activated) {
+    return registration;
   }
   return registration;
+}
+
+/** Arranque: actualiza SW + revisión antes de iniciar la app. */
+export async function ensureFreshApp() {
+  await persistStorage();
+  const registration = await registerServiceWorker();
+  if (registration && navigator.onLine) {
+    try {
+      await registration.update();
+      await activateWaitingWorker(registration);
+    } catch (_err) {
+      /* Continúa con la copia actual. */
+    }
+  }
+  const result = await applyRemoteRevision();
+  if (result.changed) {
+    return { reloaded: true, revision: result.revision };
+  }
+  return { reloaded: false, revision: result.revision || currentRevision() };
+}
+
+function startRevisionPolling() {
+  if (revisionTimer) {
+    clearInterval(revisionTimer);
+  }
+  revisionTimer = window.setInterval(() => {
+    if (!navigator.onLine || document.visibilityState === "hidden") {
+      return;
+    }
+    refreshServiceWorker();
+    applyRemoteRevision();
+  }, REVISION_POLL_MS);
 }
 
 export function downloadClientScript() {
@@ -143,8 +227,6 @@ export async function runInstallSetup() {
 }
 
 export function startRuntime() {
-  registerServiceWorker();
-  persistStorage();
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
     deferredInstall = event;
@@ -173,6 +255,7 @@ export function startRuntime() {
       applyRemoteRevision();
     }
   });
+  startRevisionPolling();
   if (navigator.onLine) {
     applyRemoteRevision();
   }

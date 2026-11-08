@@ -2,11 +2,31 @@ import { h } from "./dom.js";
 import { clearRouteParams, onNavigate } from "./nav.js";
 import { VIEWS } from "./views.js?v=58";
 
+function canSoftRefresh() {
+  if (document.querySelector(".modal-back")) {
+    return false;
+  }
+  const active = document.activeElement;
+  if (
+    active &&
+    (active.tagName === "INPUT" ||
+      active.tagName === "TEXTAREA" ||
+      active.tagName === "SELECT" ||
+      active.isContentEditable)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export async function startRouter() {
   const root = document.getElementById("view-root");
   const nav = document.getElementById("nav-list");
   const shell = document.getElementById("app-shell");
   const sidebar = document.getElementById("sidebar");
+  let currentView = "inventario";
+  let refreshTimer = null;
+  let rendering = false;
 
   const showHot = () => shell.classList.add("sidebar-hot");
   const hideHot = () => shell.classList.remove("sidebar-hot");
@@ -36,13 +56,33 @@ export async function startRouter() {
   async function showView(id) {
     const resolved = VIEWS[id] ? id : "inventario";
     const view = VIEWS[resolved];
+    currentView = resolved;
     nav.querySelectorAll(".nav-btn").forEach((button) => {
       button.classList.toggle("active", button.dataset.view === resolved);
     });
     root.classList.remove("panel-compact");
-    await view.render(root);
+    rendering = true;
+    try {
+      await view.render(root);
+    } finally {
+      rendering = false;
+    }
   }
 
+  function scheduleSoftRefresh() {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+    }
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      if (rendering || !canSoftRefresh()) {
+        return;
+      }
+      showView(currentView);
+    }, 400);
+  }
+
+  window.addEventListener("amircars:synced", scheduleSoftRefresh);
   onNavigate((view) => showView(view));
   await showView("inventario");
 }

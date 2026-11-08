@@ -83,6 +83,34 @@ export async function pushQueue(items) {
   return requestAuth("/api/sync/push", { method: "POST", json: { items } });
 }
 
+/** Empuje de última oportunidad al cerrar/ocultar la pestaña (keepalive). */
+export function pushQueueKeepalive(items) {
+  if (!items || !items.length) {
+    return false;
+  }
+  try {
+    const headers = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    };
+    const csrf = getCsrfToken();
+    if (csrf) {
+      headers["X-CSRFToken"] = csrf;
+    }
+    fetch("/api/sync/push", {
+      method: "POST",
+      credentials: "same-origin",
+      headers,
+      body: JSON.stringify({ items }),
+      keepalive: true,
+      cache: "no-store",
+    });
+    return true;
+  } catch (_err) {
+    return false;
+  }
+}
+
 export async function pullChanges(since) {
   const query = since ? `?since=${encodeURIComponent(since)}` : "";
   return requestAuth(`/api/sync/pull${query}`);

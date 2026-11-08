@@ -1,4 +1,14 @@
-import { fetchPhotoIndex, healthCheck, pullChanges, publishPhotoIndex, pushQueue, refreshSession, restoreCloudPhotos, uploadMediaBlob } from "./api.js";
+import {
+  fetchPhotoIndex,
+  healthCheck,
+  pullChanges,
+  publishPhotoIndex,
+  pushQueue,
+  pushQueueKeepalive,
+  refreshSession,
+  restoreCloudPhotos,
+  uploadMediaBlob,
+} from "./api.js";
 import { flushCloudPurge } from "./archiveVault.js";
 import { db, ENTITY_TABLES, PUSH_ORDER, getMeta, nowIso, pendingCount, setMeta } from "./db.js";
 import { applyRemoteRevision } from "./pwa.js";
@@ -11,10 +21,10 @@ import { bindRetry, setSyncStatus } from "./syncStatus.js";
 export { discardPurgedTestData };
 
 const BATCH = 40;
-const IDLE_HEARTBEAT_MS = 15000;
-const PENDING_HEARTBEAT_MS = 8000;
-const PENDING_BURST_MS = 2500;
-const DIRTY_DEBOUNCE_MS = 400;
+const IDLE_HEARTBEAT_MS = 10000;
+const PENDING_HEARTBEAT_MS = 4000;
+const PENDING_BURST_MS = 1500;
+const DIRTY_DEBOUNCE_MS = 250;
 const SYNC_WATCHDOG_MS = 90000;
 const PHOTO_REPUBLISH_MS = 5 * 60 * 1000;
 const REFRESH_LEAD_MS = 5 * 60 * 1000;
@@ -779,6 +789,11 @@ export async function runSync(force = false) {
     await applyRemoteRevision();
     const leftover = await pendingCount();
     await statusFromCounts(leftover);
+    try {
+      window.dispatchEvent(new CustomEvent("amircars:synced", { detail: { leftover, force } }));
+    } catch (_err) {
+      /* Entorno sin window. */
+    }
     if (leftover.total > 0) {
       scheduleHeartbeat(PENDING_BURST_MS);
     }
@@ -837,6 +852,60 @@ function scheduleDirtySync() {
   }, DIRTY_DEBOUNCE_MS);
 }
 
+async function urgentPushKeepalive() {
+  try {
+    await harvestLocalImageBlobs();
+    const all = await latestQueue();
+    if (!all.length) {
+      return;
+    }
+    const slice = all.slice(0, BATCH);
+    const items = slice.map((row) => {
+      const updated = (row.payload && row.payload.updated_at) || row.updated_at || nowIso();
+      return {
+        id: row.entity_id,
+        table: row.table,
+        op: row.op,
+        payload: { ...(row.payload || {}), id: row.entity_id, updated_at: updated },
+        updated_at: updated,
+      };
+    });
+    pushQueueKeepalive(items);
+  } catch (_err) {
+    /* El heartbeat siguiente reintenta. */
+  }
+}
+
+function bindLifecycleSync() {
+  const hideFlush = () => {
+    void urgentPushKeepalive();
+    if (navigator.onLine) {
+      runSync(true);
+    }
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      hideFlush();
+      return;
+    }
+    runSync(true);
+  });
+  window.addEventListener("pagehide", hideFlush);
+  window.addEventListener("beforeunload", () => {
+    void urgentPushKeepalive();
+  });
+  if ("serviceWorker" in navigator && "SyncManager" in window) {
+    navigator.serviceWorker.ready
+      .then((reg) => {
+        if (reg.sync) {
+          return reg.sync.register("amircars-push");
+        }
+        return null;
+      })
+      .catch(() => {});
+  }
+}
+
 export function startSyncEngine() {
   bindRetry(() => {
     runSync(true);
@@ -856,17 +925,31 @@ export function startSyncEngine() {
   window.addEventListener("pageshow", () => {
     runSync(true);
   });
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
-      runSync(true);
-    }
-  });
+  bindLifecycleSync();
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", (event) => {
+      if (event.data && event.data.type === "AMIRCARS_SYNC") {
+        runSync(true);
+      }
+    });
+  }
   scheduleHeartbeat(PENDING_BURST_MS);
   discardPurgedTestData()
     .catch(() => {})
     .finally(() => {
       refreshOfflineBadge().then(() => runSync(true));
     });
+}
+
+/** Primera sync forzada (subida + bajada completa) al abrir el panel. */
+export async function bootSync() {
+  await discardPurgedTestData().catch(() => {});
+  await runSync(true);
+  const leftover = await pendingCount();
+  if (leftover.total > 0) {
+    await runSync(true);
+  }
+  return leftover;
 }
 
 export async function publishPhotosFromThisDevice() {
