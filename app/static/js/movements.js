@@ -1,7 +1,7 @@
-import { num, writeHistorico } from "./catalog.js?v=68";
-import { db, getMeta, newId, nowIso, setMeta } from "./db.js?v=68";
-import { patchMovementLocal, saveLocal } from "./repository.js?v=68";
-import { getConfig, getTasa } from "./store.js?v=68";
+import { num, writeHistorico } from "./catalog.js?v=69";
+import { db, getMeta, newId, nowIso, setMeta } from "./db.js?v=69";
+import { patchMovementLocal, saveLocal } from "./repository.js?v=69";
+import { getConfig, getTasa } from "./store.js?v=69";
 
 export function movePayload(move) {
   return move.payload && typeof move.payload === "object" ? move.payload : {};

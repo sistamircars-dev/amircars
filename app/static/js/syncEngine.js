@@ -8,16 +8,16 @@ import {
   refreshSession,
   restoreCloudPhotos,
   uploadMediaBlob,
-} from "./api.js?v=68";
-import { flushCloudPurge } from "./archiveVault.js?v=68";
-import { db, ENTITY_TABLES, PUSH_ORDER, getMeta, nowIso, pendingCount, setMeta } from "./db.js?v=68";
-import { applyKnownRevision, applyRemoteRevision } from "./pwa.js?v=68";
-import { localIsNewer, timeMs } from "./syncTime.js?v=68";
-import { applyPhotoIndex, collectPhotoIndex } from "./photoIndex.js?v=68";
-import { discardPurgedTestData, isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js?v=68";
-import { enqueue, saveLocal, SOFT_DELETE_TABLES } from "./repository.js?v=68";
-import { setConfig } from "./store.js?v=68";
-import { bindRetry, setSyncStatus } from "./syncStatus.js?v=68";
+} from "./api.js?v=69";
+import { flushCloudPurge } from "./archiveVault.js?v=69";
+import { db, ENTITY_TABLES, PUSH_ORDER, getMeta, nowIso, pendingCount, setMeta } from "./db.js?v=69";
+import { applyKnownRevision, applyRemoteRevision } from "./pwa.js?v=69";
+import { timeMs } from "./syncTime.js?v=69";
+import { applyPhotoIndex, collectPhotoIndex } from "./photoIndex.js?v=69";
+import { discardPurgedTestData, isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js?v=69";
+import { enqueue, saveLocal, SOFT_DELETE_TABLES } from "./repository.js?v=69";
+import { setConfig } from "./store.js?v=69";
+import { bindRetry, setSyncStatus } from "./syncStatus.js?v=69";
 
 export { discardPurgedTestData };
 
@@ -269,12 +269,52 @@ async function publishLocalCloudImages(force = false) {
   return count;
 }
 
-/** Reencola filas locales más nuevas que el último pull (cambios que nunca entraron a sync_queue). */
+const FP_SKIP = new Set(["updated_at", "created_at", "created_by", "local_blob", "thumbnail_url", "blob"]);
+
+function canonicalValue(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalValue(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${key}:${canonicalValue(value[key])}`)
+      .join(",")}}`;
+  }
+  if (typeof value === "string") {
+    return JSON.stringify(value.trim());
+  }
+  return JSON.stringify(value ?? null);
+}
+
+function rowFingerprint(row) {
+  const keys = Object.keys(row || {})
+    .filter((key) => !FP_SKIP.has(key) && !key.startsWith("_"))
+    .sort();
+  const raw = keys.map((key) => `${key}:${canonicalValue(row[key])}`).join("|");
+  let hash = 5381;
+  for (let i = 0; i < raw.length; i += 1) {
+    hash = (hash * 33) ^ raw.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+async function loadFingerprints() {
+  const stored = await getMeta("synced_fp", {});
+  return stored && typeof stored === "object" ? stored : {};
+}
+
+async function saveFingerprints(fps) {
+  await setMeta("synced_fp", fps);
+}
+
+/** Sube filas cuyo contenido cambió desde el último ack. No mira la hora. */
 async function requeueLocalDrift() {
-  const since = await getMeta("last_pull_at", null);
-  if (!since) {
+  const ready = await getMeta("synced_fp_ready", false);
+  if (!ready) {
     return 0;
   }
+  const fps = await loadFingerprints();
   const queued = await db.sync_queue.toArray();
   const blocked = new Set(queued.map((row) => `${row.table}:${row.entity_id}`));
   let added = 0;
@@ -288,11 +328,10 @@ async function requeueLocalDrift() {
         continue;
       }
       const key = `${table}:${row.id}`;
-      if (blocked.has(key)) {
+      if (blocked.has(key) || !Object.prototype.hasOwnProperty.call(fps, key)) {
         continue;
       }
-      const stamp = row.updated_at || row.created_at || "";
-      if (!localIsNewer(stamp, since)) {
+      if (fps[key] === rowFingerprint(row)) {
         continue;
       }
       if (table === "producto_imagenes") {
@@ -579,24 +618,23 @@ function queuePayload(row) {
   };
 }
 
-/** Tras un ack, la fila local queda con la hora del servidor para no reencolarse por el formato de la fecha. */
-async function ackQueued(row, serverTime) {
-  const sentMs = timeMs((row.payload && row.payload.updated_at) || row.updated_at);
+/** Tras un ack, recuerda el contenido subido. Si cambió durante el envío, vuelve a la cola. */
+async function ackQueued(row, fps) {
   let local = null;
   if (ENTITY_TABLES.includes(row.table)) {
     local = await db.table(row.table).get(row.entity_id);
   }
-  const localMs = timeMs(local && local.updated_at);
-  if (local && sentMs && localMs > sentMs + 500) {
-    await db.sync_queue.delete(row.id);
-    await enqueue(row.table, "update", local);
+  await db.sync_queue.delete(row.id);
+  if (!local) {
     return;
   }
-  if (local) {
-    const stamp = timeMs(serverTime) || sentMs || Date.now();
-    await db.table(row.table).put({ ...local, updated_at: new Date(stamp).toISOString() });
+  const current = rowFingerprint(local);
+  const sent = rowFingerprint({ ...(row.payload || {}), id: row.entity_id });
+  if (sent !== current && row.table !== "movimientos_inventario") {
+    await enqueue(row.table, row.op === "insert" ? "insert" : "update", local);
+    return;
   }
-  await db.sync_queue.delete(row.id);
+  fps[`${row.table}:${row.entity_id}`] = current;
 }
 
 async function postPush(items) {
@@ -625,17 +663,18 @@ async function settlePush(slice, result) {
   const rejected = new Map(
     (result.data.rejected || []).map((row) => [String(row.id).toLowerCase(), row.error])
   );
+  const fps = await loadFingerprints();
   let progressed = false;
   for (const row of slice) {
     const key = String(row.entity_id).toLowerCase();
     if (done.has(key)) {
-      await ackQueued(row, result.data.server_time);
+      await ackQueued(row, fps);
       progressed = true;
       continue;
     }
     const err = String(rejected.get(key) || result.data.error || "");
     if (/23505|duplicate|unique/i.test(err) && (row.table === "tasas_bcv" || row.table === "preferencias_usuario" || row.table === "configuracion_sistema")) {
-      await ackQueued(row, result.data.server_time);
+      await ackQueued(row, fps);
       progressed = true;
       continue;
     }
@@ -648,6 +687,7 @@ async function settlePush(slice, result) {
       last_error: err || "Rechazado",
     });
   }
+  await saveFingerprints(fps);
   const fresh = await applyKnownRevision(result.data.revision);
   return { progressed, reload: Boolean(fresh.changed) };
 }
@@ -737,17 +777,17 @@ async function flushQueue(token = activeToken) {
 }
 
 async function mergePull(tables) {
+  const fps = await loadFingerprints();
   const queued = await db.sync_queue.toArray();
   const blocked = new Set(queued.map((row) => `${row.table}:${row.entity_id}`));
   const archived = (await getMeta("archived_ids", {})) || {};
+  const seen = new Set();
+  let dirty = false;
   for (const table of ENTITY_TABLES) {
     const rows = (tables && tables[table]) || [];
     const gone = new Set(archived[table] || []);
     for (const row of rows) {
-      if (!row || !row.id) {
-        continue;
-      }
-      if (gone.has(row.id) || blocked.has(`${table}:${row.id}`)) {
+      if (!row || !row.id || gone.has(row.id)) {
         continue;
       }
       if (table === "proveedores" && isPurgedTestProvider(row)) {
@@ -756,16 +796,84 @@ async function mergePull(tables) {
       if (table === "productos" && isPurgedTestProduct(row)) {
         continue;
       }
+      const key = `${table}:${row.id}`;
+      seen.add(key);
+      if (blocked.has(key)) {
+        continue;
+      }
       const local = await db.table(table).get(row.id);
-      if (local && localIsNewer(local.updated_at, row.updated_at)) {
-        if (table !== "movimientos_inventario") {
-          await enqueue(table, "update", local);
+      const remoteFp = rowFingerprint(row);
+      if (!local) {
+        await db.table(table).put(row);
+        fps[key] = remoteFp;
+        dirty = true;
+        continue;
+      }
+      const localFp = rowFingerprint(local);
+      if (localFp === remoteFp) {
+        if (fps[key] !== localFp) {
+          fps[key] = localFp;
+          dirty = true;
         }
         continue;
       }
-      await db.table(table).put(row);
+      const known = Object.prototype.hasOwnProperty.call(fps, key);
+      if (known && fps[key] === localFp) {
+        await db.table(table).put(row);
+        fps[key] = remoteFp;
+        dirty = true;
+        continue;
+      }
+      if (table === "movimientos_inventario") {
+        if (!known) {
+          fps[key] = remoteFp;
+          dirty = true;
+        }
+        continue;
+      }
+      await enqueue(table, "update", local);
+      blocked.add(key);
     }
   }
+
+  if (dirty) {
+    await saveFingerprints(fps);
+  }
+  return seen;
+}
+
+async function enqueueMissingLocal(seen) {
+  const fps = await loadFingerprints();
+  const queued = await db.sync_queue.toArray();
+  const blocked = new Set(queued.map((row) => `${row.table}:${row.entity_id}`));
+  for (const table of ENTITY_TABLES) {
+    const locals = await db.table(table).toArray();
+    for (const local of locals) {
+      if (!local || !local.id) {
+        continue;
+      }
+      const key = `${table}:${local.id}`;
+      if (seen.has(key) || blocked.has(key) || fps[key] === rowFingerprint(local)) {
+        continue;
+      }
+      if (table === "producto_imagenes") {
+        const url = String(local.cloudinary_url || "").trim();
+        const pid = String(local.cloudinary_public_id || "").trim();
+        if (!url && !pid) {
+          continue;
+        }
+      }
+      if (table === "proveedores" && isPurgedTestProvider(local)) {
+        continue;
+      }
+      if (table === "productos" && isPurgedTestProduct(local)) {
+        continue;
+      }
+      await enqueue(table, table === "movimientos_inventario" ? "insert" : "update", local);
+      blocked.add(key);
+    }
+  }
+  await setMeta("synced_fp_ready", true);
 }
 
 function pullWatermark(data) {
@@ -791,6 +899,7 @@ function pullWatermark(data) {
 
 async function pullRemote(full = false) {
   let since = full ? null : await getMeta("last_pull_at", null);
+  const seen = new Set();
   for (let page = 0; page < 8; page += 1) {
     const result = await pullChanges(since);
     if (result.status === 401) {
@@ -803,12 +912,16 @@ async function pullRemote(full = false) {
     if (pulled.changed) {
       return;
     }
-    await mergePull(result.data.tables);
+    const pageSeen = await mergePull(result.data.tables);
+    pageSeen.forEach((key) => seen.add(key));
     await dropDuplicateTasas();
     const mark = pullWatermark(result.data);
     await setMeta("last_pull_at", mark);
     const truncated = result.data.truncated || [];
     if (!truncated.length) {
+      if (full) {
+        await enqueueMissingLocal(seen);
+      }
       return;
     }
     const nextMs = timeMs(mark);
@@ -928,7 +1041,8 @@ export async function runSync(force = false) {
     }
     await publishLocalCloudImages(false);
     try {
-      await pullRemote(force);
+      const baselined = await getMeta("synced_fp_ready", false);
+      await pullRemote(!baselined);
     } catch (err) {
       if (/sesión|401|autentic/i.test(String(err && err.message))) {
         throw err;

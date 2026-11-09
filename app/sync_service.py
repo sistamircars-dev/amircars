@@ -51,7 +51,8 @@ def sanitize_row(table: str, payload: dict[str, Any], entity_id: str) -> dict[st
     allowed = COLUMNS[table]
     row = {key: payload[key] for key in payload if key in allowed}
     row["id"] = entity_id
-    row["updated_at"] = payload.get("updated_at") or utc_now()
+    # La hora de la PC no decide el orden: el servidor marca la fila al recibirla.
+    row["updated_at"] = utc_now()
     if "is_active" not in row:
         row["is_active"] = True
     if "created_by" in allowed:

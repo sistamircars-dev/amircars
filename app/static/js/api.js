@@ -1,4 +1,4 @@
-import { getCsrfToken } from "./csrf.js?v=68";
+import { getCsrfToken } from "./csrf.js?v=69";
 
 async function request(url, options = {}) {
   const headers = new Headers(options.headers || {});

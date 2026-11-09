@@ -1,5 +1,5 @@
-import { catalogWords, loadContext, matchesQuery, productBlob, requestRestock } from "./catalog.js?v=68";
-import { h } from "./dom.js?v=68";
+import { catalogWords, loadContext, matchesQuery, productBlob, requestRestock } from "./catalog.js?v=69";
+import { h } from "./dom.js?v=69";
 
 function labelOf(product, ctx) {
   const code = product.codigo ? `${product.codigo} · ` : "";

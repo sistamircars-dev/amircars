@@ -1,4 +1,4 @@
-import { db, ENTITY_TABLES } from "./db.js?v=68";
+import { db, ENTITY_TABLES } from "./db.js?v=69";
 
 const ENTITY_BACKUP = [
   "categorias",
