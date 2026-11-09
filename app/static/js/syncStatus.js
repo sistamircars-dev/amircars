@@ -18,6 +18,9 @@ export function setSyncStatus(state, extra = "", hint = "") {
   if (state === "offline" && extra) {
     text = `Offline (${extra} cambios guardados localmente)`;
   }
+  if (state === "syncing" && extra) {
+    text = `Subiendo… ${extra}`;
+  }
   if (state === "pending" && extra) {
     text = `${extra} cambio${extra === "1" ? "" : "s"} por subir`;
   }

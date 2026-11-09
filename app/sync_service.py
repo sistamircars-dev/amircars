@@ -168,19 +168,35 @@ def _merge_on_unique(client, table: str, row: dict[str, Any]) -> str | None:
     return str(target_id)
 
 
-def apply_push(raw: dict[str, Any]) -> dict[str, Any]:
+def split_push_items(raw: Any) -> tuple[list[SyncPushItem], list[dict[str, str]]]:
+    """Un ítem inválido no rechaza el lote: el resto sí se sube."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("items"), list):
+        raise ValueError("Datos inválidos")
+    valid: list[SyncPushItem] = []
+    rejected: list[dict[str, str]] = []
+    for item in raw["items"][:500]:
+        if not isinstance(item, dict):
+            rejected.append({"id": "", "error": "Datos inválidos"})
+            continue
+        try:
+            valid.append(SyncPushItem.model_validate(item))
+        except ValidationError:
+            rejected.append({"id": str(item.get("id") or "")[:80], "error": "Datos inválidos"})
+    return valid, rejected
+
+
+def apply_push(raw: dict[str, Any]) -> tuple[dict[str, Any], int]:
     try:
-        body = SyncPushIn.model_validate(raw)
-    except ValidationError as exc:
-        return {"ok": False, "error": "Datos inválidos", "details": exc.errors()}, 400
+        items, rejected = split_push_items(raw)
+    except ValueError:
+        return {"ok": False, "error": "Datos inválidos", "revision": APP_REVISION}, 400
 
     client = user_client()
     accepted: list[str] = []
     duplicates: list[str] = []
-    rejected: list[dict[str, str]] = []
     remaps: list[dict[str, str]] = []
 
-    for item in _sort_items(body.items):
+    for item in _sort_items(items):
         if item.table not in COLUMNS:
             rejected.append({"id": item.id, "error": "Tabla no permitida"})
             continue

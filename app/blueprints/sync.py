@@ -9,7 +9,7 @@ bp = Blueprint("sync", __name__, url_prefix="/api/sync")
 
 @bp.post("/push")
 @login_required
-@limiter.limit("30 per minute")
+@limiter.limit("180 per minute")
 def push():
     payload = request.get_json(silent=True) or {}
     body, status = apply_push(payload)
@@ -18,7 +18,7 @@ def push():
 
 @bp.get("/pull")
 @login_required
-@limiter.limit("60 per minute")
+@limiter.limit("120 per minute")
 def pull():
     since = (request.args.get("since") or "").strip() or None
     body = apply_pull(since)

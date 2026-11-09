@@ -1,14 +1,14 @@
-import { coverFor, deleteProduct, formatPair, loadContext, matchesFieldFilters, matchesQuery, productBlob, safeImg } from "./catalog.js?v=67";
-import { db } from "./db.js?v=67";
-import { downloadTablePdf, downloadXlsx } from "./exportDocs.js?v=67";
-import { h } from "./dom.js?v=67";
-import { formatDisplayDate, lastArrivalByProduct, todayLocal } from "./movements.js?v=67";
-import { mountFieldFilters } from "./filters.js?v=67";
-import { getRouteParams } from "./nav.js?v=67";
-import { openProduct } from "./productDetail.js?v=67";
-import { openProductForm } from "./productForm.js?v=67";
-import { mountSearch } from "./searchBox.js?v=67";
-import { getPrefs, savePrefs } from "./store.js?v=67";
+import { coverFor, deleteProduct, formatPair, loadContext, matchesFieldFilters, matchesQuery, productBlob, safeImg } from "./catalog.js?v=68";
+import { db } from "./db.js?v=68";
+import { downloadTablePdf, downloadXlsx } from "./exportDocs.js?v=68";
+import { h } from "./dom.js?v=68";
+import { formatDisplayDate, lastArrivalByProduct, todayLocal } from "./movements.js?v=68";
+import { mountFieldFilters } from "./filters.js?v=68";
+import { getRouteParams } from "./nav.js?v=68";
+import { openProduct } from "./productDetail.js?v=68";
+import { openProductForm } from "./productForm.js?v=68";
+import { mountSearch } from "./searchBox.js?v=68";
+import { getPrefs, savePrefs } from "./store.js?v=68";
 
 const COLUMNS = [
   { id: "codigo", label: "Código" },

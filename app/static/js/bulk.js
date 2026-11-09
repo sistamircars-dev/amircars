@@ -1,8 +1,8 @@
-import { createProduct, findByCodigo, loadContext, parseCatalogLines, updateProduct } from "./catalog.js?v=67";
-import { controlForField, createCombo } from "./combo.js?v=67";
-import { db, newId } from "./db.js?v=67";
-import { h } from "./dom.js?v=67";
-import { mountCampoEditor, retireCampo } from "./taxonomy.js?v=67";
+import { createProduct, findByCodigo, loadContext, parseCatalogLines, updateProduct } from "./catalog.js?v=68";
+import { controlForField, createCombo } from "./combo.js?v=68";
+import { db, newId } from "./db.js?v=68";
+import { h } from "./dom.js?v=68";
+import { mountCampoEditor, retireCampo } from "./taxonomy.js?v=68";
 
 function blankBulkRow() {
   return {

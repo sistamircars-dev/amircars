@@ -1,5 +1,5 @@
-const CACHE = "amircars-offline-v67";
-const APP_REVISION = "67";
+const CACHE = "amircars-offline-v68";
+const APP_REVISION = "68";
 const PRECACHE = [
   "/offline.html",
   "/manifest.json",
@@ -14,6 +14,7 @@ const PRECACHE = [
   "/static/js/purgeCatalog.js",
   "/static/js/repository.js",
   "/static/js/syncStatus.js",
+  "/static/js/syncTime.js",
   "/static/js/syncEngine.js",
   "/static/js/pwa.js",
   "/static/js/dom.js",
@@ -43,8 +44,8 @@ const PRECACHE = [
   "/static/js/views.js",
   "/static/js/router.js",
   "/static/js/app.js",
-  "/static/css/app.css?v=67",
-  "/static/css/catalog.css?v=67",
+  "/static/css/app.css?v=68",
+  "/static/css/catalog.css?v=68",
   "/static/img/amircars/logo.png",
   "/static/img/amircars/pwa-icon-192.png",
   "/static/img/amircars/pwa-icon-512.png",

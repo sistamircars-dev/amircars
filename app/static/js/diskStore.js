@@ -1,4 +1,4 @@
-import { getMeta, setMeta } from "./db.js?v=67";
+import { getMeta, setMeta } from "./db.js?v=68";
 
 const META_DIR = "archive_dir";
 

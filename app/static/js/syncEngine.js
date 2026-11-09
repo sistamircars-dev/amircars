@@ -8,24 +8,27 @@ import {
   refreshSession,
   restoreCloudPhotos,
   uploadMediaBlob,
-} from "./api.js?v=67";
-import { flushCloudPurge } from "./archiveVault.js?v=67";
-import { db, ENTITY_TABLES, PUSH_ORDER, getMeta, nowIso, pendingCount, setMeta } from "./db.js?v=67";
-import { applyKnownRevision, applyRemoteRevision } from "./pwa.js?v=67";
-import { applyPhotoIndex, collectPhotoIndex } from "./photoIndex.js?v=67";
-import { discardPurgedTestData, isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js?v=67";
-import { enqueue, saveLocal, SOFT_DELETE_TABLES } from "./repository.js?v=67";
-import { setConfig } from "./store.js?v=67";
-import { bindRetry, setSyncStatus } from "./syncStatus.js?v=67";
+} from "./api.js?v=68";
+import { flushCloudPurge } from "./archiveVault.js?v=68";
+import { db, ENTITY_TABLES, PUSH_ORDER, getMeta, nowIso, pendingCount, setMeta } from "./db.js?v=68";
+import { applyKnownRevision, applyRemoteRevision } from "./pwa.js?v=68";
+import { localIsNewer, timeMs } from "./syncTime.js?v=68";
+import { applyPhotoIndex, collectPhotoIndex } from "./photoIndex.js?v=68";
+import { discardPurgedTestData, isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js?v=68";
+import { enqueue, saveLocal, SOFT_DELETE_TABLES } from "./repository.js?v=68";
+import { setConfig } from "./store.js?v=68";
+import { bindRetry, setSyncStatus } from "./syncStatus.js?v=68";
 
 export { discardPurgedTestData };
 
 const BATCH = 40;
+const MAX_PUSH_ROUNDS = 80;
+const MEDIA_BATCH = 4;
 const IDLE_HEARTBEAT_MS = 10000;
 const PENDING_HEARTBEAT_MS = 4000;
 const PENDING_BURST_MS = 1500;
 const DIRTY_DEBOUNCE_MS = 250;
-const SYNC_WATCHDOG_MS = 90000;
+const SYNC_WATCHDOG_MS = 180000;
 const PHOTO_REPUBLISH_MS = 5 * 60 * 1000;
 const REFRESH_LEAD_MS = 5 * 60 * 1000;
 let running = false;
@@ -33,6 +36,13 @@ let queuedForce = false;
 let timer = null;
 let dirtyTimer = null;
 let startedAt = 0;
+let activeToken = 0;
+
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 function isOnline() {
   return navigator.onLine;
@@ -281,8 +291,8 @@ async function requeueLocalDrift() {
       if (blocked.has(key)) {
         continue;
       }
-      const stamp = String(row.updated_at || row.created_at || "");
-      if (!stamp || stamp <= String(since)) {
+      const stamp = row.updated_at || row.created_at || "";
+      if (!localIsNewer(stamp, since)) {
         continue;
       }
       if (table === "producto_imagenes") {
@@ -321,7 +331,7 @@ async function hydratePublishedPhotos() {
 
 async function flushMedia() {
   await harvestLocalImageBlobs();
-  const pending = await db.offline_media_queue.orderBy("created_at").toArray();
+  const pending = (await db.offline_media_queue.orderBy("created_at").toArray()).slice(0, MEDIA_BATCH);
   for (const item of pending) {
     if (!isBlob(item.blob)) {
       await db.offline_media_queue.update(item.id, {
@@ -558,64 +568,170 @@ async function softenPayload(row, err) {
   return attempts < 3;
 }
 
-async function flushQueue() {
-  await rewriteQueuedSoftDeletes();
-  await collapseDuplicateProveedores();
-  for (let round = 0; round < 12; round += 1) {
-    await ensureParents();
-    const all = await latestQueue();
-    if (!all.length) {
-      return;
+function queuePayload(row) {
+  const updated = (row.payload && row.payload.updated_at) || row.updated_at || nowIso();
+  return {
+    id: row.entity_id,
+    table: row.table,
+    op: row.op,
+    payload: { ...(row.payload || {}), id: row.entity_id, updated_at: updated },
+    updated_at: updated,
+  };
+}
+
+/** Tras un ack, la fila local queda con la hora del servidor para no reencolarse por el formato de la fecha. */
+async function ackQueued(row, serverTime) {
+  const sentMs = timeMs((row.payload && row.payload.updated_at) || row.updated_at);
+  let local = null;
+  if (ENTITY_TABLES.includes(row.table)) {
+    local = await db.table(row.table).get(row.entity_id);
+  }
+  const localMs = timeMs(local && local.updated_at);
+  if (local && sentMs && localMs > sentMs + 500) {
+    await db.sync_queue.delete(row.id);
+    await enqueue(row.table, "update", local);
+    return;
+  }
+  if (local) {
+    const stamp = timeMs(serverTime) || sentMs || Date.now();
+    await db.table(row.table).put({ ...local, updated_at: new Date(stamp).toISOString() });
+  }
+  await db.sync_queue.delete(row.id);
+}
+
+async function postPush(items) {
+  let result = await pushQueue(items);
+  if (result.status === 401) {
+    const session = await refreshSession();
+    if (!session || !session.ok) {
+      throw new Error("Sesión expirada; vuelva a entrar.");
     }
-    const slice = all.slice(0, BATCH);
-    const items = slice.map((row) => {
-      const updated = (row.payload && row.payload.updated_at) || row.updated_at || nowIso();
-      return {
-        id: row.entity_id,
-        table: row.table,
-        op: row.op,
-        payload: { ...(row.payload || {}), id: row.entity_id, updated_at: updated },
-        updated_at: updated,
-      };
-    });
-    const result = await pushQueue(items);
+    result = await pushQueue(items);
     if (result.status === 401) {
       throw new Error("Sesión expirada; vuelva a entrar.");
     }
-    if (!result.data || result.status >= 500) {
-      throw new Error((result.data && result.data.error) || `Push HTTP ${result.status}`);
+  }
+  return result;
+}
+
+async function settlePush(slice, result) {
+  if (!result.data || result.status >= 500) {
+    throw new Error((result.data && result.data.error) || `Push HTTP ${result.status}`);
+  }
+  await applyRemaps(result.data.remaps || []);
+  const done = new Set(
+    [...(result.data.accepted || []), ...(result.data.duplicates || [])].map((id) => String(id).toLowerCase())
+  );
+  const rejected = new Map(
+    (result.data.rejected || []).map((row) => [String(row.id).toLowerCase(), row.error])
+  );
+  let progressed = false;
+  for (const row of slice) {
+    const key = String(row.entity_id).toLowerCase();
+    if (done.has(key)) {
+      await ackQueued(row, result.data.server_time);
+      progressed = true;
+      continue;
     }
-    const pushed = await applyKnownRevision(result.data.revision);
-    if (pushed.changed) {
+    const err = String(rejected.get(key) || result.data.error || "");
+    if (/23505|duplicate|unique/i.test(err) && (row.table === "tasas_bcv" || row.table === "preferencias_usuario" || row.table === "configuracion_sistema")) {
+      await ackQueued(row, result.data.server_time);
+      progressed = true;
+      continue;
+    }
+    if (await softenPayload(row, err)) {
+      progressed = true;
+      continue;
+    }
+    await db.sync_queue.update(row.id, {
+      attempts: (row.attempts || 0) + 1,
+      last_error: err || "Rechazado",
+    });
+  }
+  const fresh = await applyKnownRevision(result.data.revision);
+  return { progressed, reload: Boolean(fresh.changed) };
+}
+
+async function flushQueue(token = activeToken) {
+  await rewriteQueuedSoftDeletes();
+  await collapseDuplicateProveedores();
+  const skip = new Set();
+  let rateWaits = 0;
+  for (let round = 0; round < MAX_PUSH_ROUNDS; round += 1) {
+    if (token !== activeToken || !isOnline()) {
       return;
     }
-    await applyRemaps(result.data.remaps || []);
-    const done = new Set([...(result.data.accepted || []), ...(result.data.duplicates || [])]);
-    const rejected = new Map((result.data.rejected || []).map((row) => [row.id, row.error]));
-    let progressed = false;
-    for (const row of slice) {
-      if (done.has(row.entity_id)) {
-        await db.sync_queue.delete(row.id);
-        progressed = true;
-        continue;
+    await ensureParents();
+    const all = (await latestQueue()).filter((row) => !skip.has(row.id));
+    if (!all.length) {
+      return;
+    }
+    const counts = await pendingCount();
+    setSyncStatus("syncing", String(counts.total));
+    const slice = all.slice(0, BATCH);
+    const result = await postPush(slice.map(queuePayload));
+    if (result.status === 429) {
+      rateWaits += 1;
+      if (rateWaits >= 4) {
+        return;
       }
-      const err = String(rejected.get(row.entity_id) || result.data.error || "");
-      if (/23505|duplicate|unique/i.test(err) && (row.table === "tasas_bcv" || row.table === "preferencias_usuario" || row.table === "configuracion_sistema")) {
-        await db.sync_queue.delete(row.id);
-        progressed = true;
-        continue;
+      await wait(2000);
+      continue;
+    }
+    rateWaits = 0;
+    if ((result.status === 400 || result.status === 413) && slice.length > 1) {
+      const mid = Math.ceil(slice.length / 2);
+      for (const part of [slice.slice(0, mid), slice.slice(mid)]) {
+        const partResult = await postPush(part.map(queuePayload));
+        if (partResult.status === 429) {
+          await wait(2000);
+          continue;
+        }
+        if (partResult.status === 400 || partResult.status === 413) {
+          for (const row of part) {
+            const one = await postPush([queuePayload(row)]);
+            if (one.status === 400 || one.status === 413 || one.status === 429) {
+              await db.sync_queue.update(row.id, {
+                attempts: (row.attempts || 0) + 1,
+                last_error: (one.data && one.data.error) || `HTTP ${one.status}`,
+              });
+              skip.add(row.id);
+              continue;
+            }
+            const oneSettled = await settlePush([row], one);
+            if (oneSettled.reload || token !== activeToken) {
+              return;
+            }
+            if (!oneSettled.progressed) {
+              skip.add(row.id);
+            }
+          }
+          continue;
+        }
+        const settled = await settlePush(part, partResult);
+        if (settled.reload || token !== activeToken) {
+          return;
+        }
+        if (!settled.progressed) {
+          part.forEach((row) => skip.add(row.id));
+        }
       }
-      if (await softenPayload(row, err)) {
-        progressed = true;
-        continue;
-      }
-      await db.sync_queue.update(row.id, {
-        attempts: (row.attempts || 0) + 1,
-        last_error: err || "Rechazado",
+      continue;
+    }
+    if ((result.status === 400 || result.status === 413) && slice.length === 1) {
+      await db.sync_queue.update(slice[0].id, {
+        attempts: (slice[0].attempts || 0) + 1,
+        last_error: (result.data && result.data.error) || `HTTP ${result.status}`,
       });
+      skip.add(slice[0].id);
+      continue;
     }
-    if (!progressed) {
+    const settled = await settlePush(slice, result);
+    if (settled.reload || token !== activeToken) {
       return;
+    }
+    if (!settled.progressed) {
+      slice.forEach((row) => skip.add(row.id));
     }
   }
 }
@@ -641,7 +757,7 @@ async function mergePull(tables) {
         continue;
       }
       const local = await db.table(table).get(row.id);
-      if (local && local.updated_at && row.updated_at && local.updated_at > row.updated_at) {
+      if (local && localIsNewer(local.updated_at, row.updated_at)) {
         if (table !== "movimientos_inventario") {
           await enqueue(table, "update", local);
         }
@@ -652,23 +768,54 @@ async function mergePull(tables) {
   }
 }
 
+function pullWatermark(data) {
+  const truncated = (data && data.truncated) || [];
+  if (!truncated.length) {
+    const stamp = timeMs(data && data.server_time) || Date.now();
+    return new Date(stamp).toISOString();
+  }
+  let cursor = 0;
+  for (const name of truncated) {
+    const rows = (data.tables && data.tables[name]) || [];
+    const last = rows[rows.length - 1];
+    const stamp = timeMs(last && last.updated_at);
+    if (stamp && (!cursor || stamp < cursor)) {
+      cursor = stamp;
+    }
+  }
+  if (!cursor) {
+    return new Date(timeMs(data.server_time) || Date.now()).toISOString();
+  }
+  return new Date(cursor).toISOString();
+}
+
 async function pullRemote(full = false) {
-  const since = full ? null : await getMeta("last_pull_at", null);
-  const result = await pullChanges(since);
-  if (result.status === 401) {
-    throw new Error("Sesión expirada; vuelva a entrar.");
-  }
-  if (!result.ok || !result.data || !result.data.ok) {
-    throw new Error((result.data && result.data.error) || `Pull HTTP ${result.status}`);
-  }
-  const pulled = await applyKnownRevision(result.data.revision);
-  if (pulled.changed) {
-    return;
-  }
-  await mergePull(result.data.tables);
-  await dropDuplicateTasas();
-  if (result.data.server_time) {
-    await setMeta("last_pull_at", result.data.server_time);
+  let since = full ? null : await getMeta("last_pull_at", null);
+  for (let page = 0; page < 8; page += 1) {
+    const result = await pullChanges(since);
+    if (result.status === 401) {
+      throw new Error("Sesión expirada; vuelva a entrar.");
+    }
+    if (!result.ok || !result.data || !result.data.ok) {
+      throw new Error((result.data && result.data.error) || `Pull HTTP ${result.status}`);
+    }
+    const pulled = await applyKnownRevision(result.data.revision);
+    if (pulled.changed) {
+      return;
+    }
+    await mergePull(result.data.tables);
+    await dropDuplicateTasas();
+    const mark = pullWatermark(result.data);
+    await setMeta("last_pull_at", mark);
+    const truncated = result.data.truncated || [];
+    if (!truncated.length) {
+      return;
+    }
+    const nextMs = timeMs(mark);
+    if (!nextMs || nextMs === timeMs(since)) {
+      return;
+    }
+    since = mark;
   }
 }
 
@@ -721,14 +868,13 @@ async function statusFromCounts(counts, hint = "") {
 
 export async function runSync(force = false) {
   if (running) {
-    if (force) {
-      queuedForce = true;
-      if (startedAt && Date.now() - startedAt > SYNC_WATCHDOG_MS) {
-        running = false;
-      } else {
-        return;
-      }
+    if (force && startedAt && Date.now() - startedAt > SYNC_WATCHDOG_MS) {
+      activeToken += 1;
+      running = false;
     } else {
+      if (force) {
+        queuedForce = true;
+      }
       return;
     }
   }
@@ -736,6 +882,7 @@ export async function runSync(force = false) {
     await refreshOfflineBadge();
     return;
   }
+  const token = ++activeToken;
   running = true;
   startedAt = Date.now();
   setSyncStatus("syncing");
@@ -759,6 +906,16 @@ export async function runSync(force = false) {
       /* El push normal sigue con lo que haya en cola. */
     }
     try {
+      await flushQueue(token);
+    } catch (err) {
+      if (/sesión|401|autentic/i.test(String(err && err.message))) {
+        throw err;
+      }
+    }
+    if (token !== activeToken) {
+      return;
+    }
+    try {
       await flushMedia();
     } catch (_err) {
       /* Las fotos no deben bloquear el resto de la sync. */
@@ -769,14 +926,7 @@ export async function runSync(force = false) {
     } catch (_err) {
       /* El restore local ya encoló las filas activas. */
     }
-    await publishLocalCloudImages(force);
-    try {
-      await flushQueue();
-    } catch (err) {
-      if (/sesión|401|autentic/i.test(String(err && err.message))) {
-        throw err;
-      }
-    }
+    await publishLocalCloudImages(false);
     try {
       await pullRemote(force);
     } catch (err) {
@@ -788,14 +938,9 @@ export async function runSync(force = false) {
     await restoreActiveCloudPhotos();
     await hydratePublishedPhotos();
     try {
-      await flushQueue();
+      await flushQueue(token);
     } catch (_err) {
       /* Si el push de catálogo falla, igual se reintenta el media. */
-    }
-    try {
-      await flushMedia();
-    } catch (_err) {
-      /* next heartbeat */
     }
     await flushCloudPurge();
     const leftover = await pendingCount();
@@ -824,13 +969,15 @@ export async function runSync(force = false) {
       scheduleHeartbeat(PENDING_BURST_MS);
     }
   } finally {
-    running = false;
-    startedAt = 0;
-    if (queuedForce) {
-      queuedForce = false;
-      window.setTimeout(() => {
-        runSync(true);
-      }, 50);
+    if (token === activeToken) {
+      running = false;
+      startedAt = 0;
+      if (queuedForce) {
+        queuedForce = false;
+        window.setTimeout(() => {
+          runSync(true);
+        }, 50);
+      }
     }
   }
 }

@@ -1,7 +1,7 @@
-import { healthCheck, runtimeInfo } from "./api.js?v=67";
+import { healthCheck, runtimeInfo } from "./api.js?v=68";
 
 /** Build que está ejecutando este archivo. Tiene que coincidir con APP_REVISION. */
-export const APP_BUILD = "67";
+export const APP_BUILD = "68";
 
 const REVISION_KEY = "amircars-revision";
 const REVISION_POLL_MS = 20000;

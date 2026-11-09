@@ -1,9 +1,9 @@
-import { createDateField } from "./dateField.js?v=67";
-import { db } from "./db.js?v=67";
-import { h } from "./dom.js?v=67";
-import { downloadTablePdf } from "./exportDocs.js?v=67";
-import { formatDisplayDate, registerFalla, todayLocal } from "./movements.js?v=67";
-import { mountLines } from "./opsLines.js?v=67";
+import { createDateField } from "./dateField.js?v=68";
+import { db } from "./db.js?v=68";
+import { h } from "./dom.js?v=68";
+import { downloadTablePdf } from "./exportDocs.js?v=68";
+import { formatDisplayDate, registerFalla, todayLocal } from "./movements.js?v=68";
+import { mountLines } from "./opsLines.js?v=68";
 
 export async function renderFallas(root) {
   const productos = (await db.productos.toArray()).filter((row) => row.is_active !== false);

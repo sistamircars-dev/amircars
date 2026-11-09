@@ -1,11 +1,11 @@
-import { createCombo } from "./combo.js?v=67";
-import { clientComboOptions, loadRegisteredClients } from "./clients.js?v=67";
-import { createDateField } from "./dateField.js?v=67";
-import { db } from "./db.js?v=67";
-import { h } from "./dom.js?v=67";
-import { buildSalidaTicket, formatDisplayDate, formatRate, listSalidaCorrelativos, registerSalida, tasaFor, todayLocal } from "./movements.js?v=67";
-import { getRouteParams } from "./nav.js?v=67";
-import { mountLines } from "./opsLines.js?v=67";
+import { createCombo } from "./combo.js?v=68";
+import { clientComboOptions, loadRegisteredClients } from "./clients.js?v=68";
+import { createDateField } from "./dateField.js?v=68";
+import { db } from "./db.js?v=68";
+import { h } from "./dom.js?v=68";
+import { buildSalidaTicket, formatDisplayDate, formatRate, listSalidaCorrelativos, registerSalida, tasaFor, todayLocal } from "./movements.js?v=68";
+import { getRouteParams } from "./nav.js?v=68";
+import { mountLines } from "./opsLines.js?v=68";
 
 function ticketText(value) {
   return String(value ?? "")
