@@ -1,5 +1,17 @@
-const CACHE = "amircars-offline-v69";
-const APP_REVISION = "69";
+const CACHE = "amircars-offline-v70";
+const APP_REVISION = "70";
+const RECOVERY_HTML = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AMIRCARS</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0B0C10;color:#F5F5F5;font-family:Segoe UI,sans-serif}main{max-width:28rem;padding:1.5rem}</style></head><body><main><h1>AMIRCARS</h1><p>Abriendo el sistema…</p></main><script>setTimeout(function(){location.reload()},4000)</script></body></html>`;
+
+function recoveryResponse() {
+  return new Response(RECOVERY_HTML, {
+    status: 200,
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+  });
+}
+
+function emptyResponse() {
+  return new Response("", { status: 503, headers: { "Cache-Control": "no-store" } });
+}
 const PRECACHE = [
   "/offline.html",
   "/manifest.json",
@@ -44,8 +56,8 @@ const PRECACHE = [
   "/static/js/views.js",
   "/static/js/router.js",
   "/static/js/app.js",
-  "/static/css/app.css?v=69",
-  "/static/css/catalog.css?v=69",
+  "/static/css/app.css?v=70",
+  "/static/css/catalog.css?v=70",
   "/static/img/amircars/logo.png",
   "/static/img/amircars/pwa-icon-192.png",
   "/static/img/amircars/pwa-icon-512.png",
@@ -128,43 +140,55 @@ self.addEventListener("fetch", (event) => {
   }
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request.url, { cache: "no-store", credentials: "same-origin", redirect: "follow" })
-        .then((response) => {
-          const finalPath = new URL(response.url).pathname;
-          if (response.ok && finalPath !== "/login") {
-            const forRequest = response.clone();
-            const forRoot = response.clone();
-            caches.open(CACHE).then((cache) => {
-              cache.put(request, forRequest);
-              cache.put("/", forRoot);
-            });
-          }
-          return response;
-        })
-        .catch(async () => {
-          const cached = (await caches.match(request)) || (await caches.match("/")) || (await caches.match("/offline.html"));
-          return cached;
-        })
+      (async () => {
+        const network = fetch(request)
+          .then((response) => {
+            if (response && response.ok) {
+              const finalPath = new URL(response.url).pathname;
+              if (finalPath !== "/login") {
+                const forRequest = response.clone();
+                const forRoot = response.clone();
+                caches.open(CACHE).then((cache) => {
+                  cache.put(request, forRequest);
+                  cache.put("/", forRoot);
+                });
+              }
+            }
+            return response;
+          })
+          .catch(() => null);
+        const timed = new Promise((resolve) => {
+          setTimeout(() => resolve(null), 8000);
+        });
+        const winner = await Promise.race([network, timed]);
+        if (winner) {
+          return winner;
+        }
+        const cached =
+          (await caches.match(request)) || (await caches.match("/")) || (await caches.match("/offline.html"));
+        return cached || recoveryResponse();
+      })()
     );
     return;
   }
   const isCode = url.pathname.startsWith("/static/js/") || url.pathname.startsWith("/static/css/");
   event.respondWith(
-    caches.match(request, { ignoreSearch: isCode }).then((cached) => {
-      const fetched = fetch(request.url, {
-        cache: isCode ? "no-store" : "default",
-        credentials: "same-origin",
-        redirect: "follow",
-      })
-        .then((response) => {
-          if (response && response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE).then((cache) => cache.put(request, copy));
-          }
+    (async () => {
+      try {
+        const response = await fetch(request);
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(request, copy));
           return response;
-        })
-        .catch(() => cached);
-      return isCode ? fetched.catch(() => cached) : cached || fetched;
-    })
+        }
+        if (response) {
+          return response;
+        }
+      } catch (_err) {
+        /* Sigue la copia guardada. */
+      }
+      const cached = await caches.match(request, { ignoreSearch: isCode });
+      return cached || emptyResponse();
+    })()
   );
 });

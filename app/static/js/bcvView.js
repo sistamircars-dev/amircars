@@ -1,15 +1,15 @@
-import { fetchBcvDate, fetchBcvToday } from "./api.js?v=69";
-import { raiseSalePrices } from "./catalog.js?v=69";
-import { archiveStatus, restoreHistoryFromFile, runArchiveIfNeeded } from "./archiveVault.js?v=69";
-import { createDateField } from "./dateField.js?v=69";
-import { pickArchiveDir } from "./diskStore.js?v=69";
-import { h } from "./dom.js?v=69";
-import { countBackupRows, downloadBackup, exportLocalBackup, restoreLocalBackup } from "./localBackup.js?v=69";
-import { formatDisplayDate, formatRate } from "./movements.js?v=69";
-import { downloadClientScript, runInstallSetup } from "./pwa.js?v=69";
-import { getConfig, getTasa, setConfig, upsertTasa } from "./store.js?v=69";
-import { collectPhotoIndex, downloadPhotoIndex, importPhotoSource } from "./photoIndex.js?v=69";
-import { publishPhotosFromThisDevice, pullPublishedPhotos, runSync } from "./syncEngine.js?v=69";
+import { fetchBcvDate, fetchBcvToday } from "./api.js?v=70";
+import { raiseSalePrices } from "./catalog.js?v=70";
+import { archiveStatus, restoreHistoryFromFile, runArchiveIfNeeded } from "./archiveVault.js?v=70";
+import { createDateField } from "./dateField.js?v=70";
+import { pickArchiveDir } from "./diskStore.js?v=70";
+import { h } from "./dom.js?v=70";
+import { countBackupRows, downloadBackup, exportLocalBackup, restoreLocalBackup } from "./localBackup.js?v=70";
+import { formatDisplayDate, formatRate } from "./movements.js?v=70";
+import { downloadClientScript, runInstallSetup } from "./pwa.js?v=70";
+import { getConfig, getTasa, setConfig, upsertTasa } from "./store.js?v=70";
+import { collectPhotoIndex, downloadPhotoIndex, importPhotoSource } from "./photoIndex.js?v=70";
+import { publishPhotosFromThisDevice, pullPublishedPhotos, runSync } from "./syncEngine.js?v=70";
 
 export async function refreshRateChip() {
   const chip = document.getElementById("rate-chip");

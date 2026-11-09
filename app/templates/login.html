@@ -50,9 +50,7 @@
           }
         }).catch(function () {});
       }
-      if (!navigator.onLine) {
-        location.replace("/");
-      } else {
+      if (navigator.onLine) {
         fetch("/api/health", { cache: "no-store", credentials: "same-origin" })
           .then(function (response) { return response.json(); })
           .then(function (data) {

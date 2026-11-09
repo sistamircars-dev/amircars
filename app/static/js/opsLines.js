@@ -1,7 +1,7 @@
-import { controlForField, createCombo } from "./combo.js?v=69";
-import { h } from "./dom.js?v=69";
-import { newId } from "./db.js?v=69";
-import { openProductImage } from "./productDetail.js?v=69";
+import { controlForField, createCombo } from "./combo.js?v=70";
+import { h } from "./dom.js?v=70";
+import { newId } from "./db.js?v=70";
+import { openProductImage } from "./productDetail.js?v=70";
 
 function blankLine() {
   return {

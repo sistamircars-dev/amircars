@@ -16,16 +16,18 @@
   <body>
     <main>
       <h1>AMIRCARS</h1>
-      <p>No hay internet. Si ya usó el panel en este equipo, se abre la copia local y se guarda aquí hasta reconectar.</p>
-      <button type="button" id="open-local">Abrir copia local</button>
+      <p>Reconectando. La pantalla se abre sola en cuanto el servidor responde.</p>
+      <button type="button" id="open-local">Reintentar</button>
     </main>
     <script>
-      if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.register("/sw.js", { scope: "/" });
-      }
       document.getElementById("open-local").addEventListener("click", () => {
-        location.replace("/");
+        location.reload();
       });
+      setInterval(() => {
+        if (navigator.onLine) {
+          location.reload();
+        }
+      }, 5000);
     </script>
   </body>
 </html>

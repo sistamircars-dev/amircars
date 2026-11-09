@@ -1,18 +1,18 @@
-import { matchesQuery, requestRestock } from "./catalog.js?v=69";
-import { db } from "./db.js?v=69";
-import { h } from "./dom.js?v=69";
+import { matchesQuery, requestRestock } from "./catalog.js?v=70";
+import { db } from "./db.js?v=70";
+import { h } from "./dom.js?v=70";
 import {
   backfillSupplierLinks,
   editEntradaFactura,
   formatDisplayDate,
   groupEntradaFacturas,
   voidEntradaFactura,
-} from "./movements.js?v=69";
-import { createDateField } from "./dateField.js?v=69";
-import { promptJustification } from "./promptJustification.js?v=69";
-import { openProductForm } from "./productForm.js?v=69";
-import { discardPurgedTestData, isPurgedTestProvider } from "./purgeCatalog.js?v=69";
-import { deactivateLocal, saveLocal } from "./repository.js?v=69";
+} from "./movements.js?v=70";
+import { createDateField } from "./dateField.js?v=70";
+import { promptJustification } from "./promptJustification.js?v=70";
+import { openProductForm } from "./productForm.js?v=70";
+import { discardPurgedTestData, isPurgedTestProvider } from "./purgeCatalog.js?v=70";
+import { deactivateLocal, saveLocal } from "./repository.js?v=70";
 
 function providerForm(existing) {
   const codigo = h("input", { class: "app-input", required: "required" });

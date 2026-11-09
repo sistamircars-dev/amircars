@@ -8,16 +8,16 @@ import {
   refreshSession,
   restoreCloudPhotos,
   uploadMediaBlob,
-} from "./api.js?v=69";
-import { flushCloudPurge } from "./archiveVault.js?v=69";
-import { db, ENTITY_TABLES, PUSH_ORDER, getMeta, nowIso, pendingCount, setMeta } from "./db.js?v=69";
-import { applyKnownRevision, applyRemoteRevision } from "./pwa.js?v=69";
-import { timeMs } from "./syncTime.js?v=69";
-import { applyPhotoIndex, collectPhotoIndex } from "./photoIndex.js?v=69";
-import { discardPurgedTestData, isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js?v=69";
-import { enqueue, saveLocal, SOFT_DELETE_TABLES } from "./repository.js?v=69";
-import { setConfig } from "./store.js?v=69";
-import { bindRetry, setSyncStatus } from "./syncStatus.js?v=69";
+} from "./api.js?v=70";
+import { flushCloudPurge } from "./archiveVault.js?v=70";
+import { db, ENTITY_TABLES, PUSH_ORDER, getMeta, nowIso, pendingCount, setMeta } from "./db.js?v=70";
+import { applyKnownRevision, applyRemoteRevision } from "./pwa.js?v=70";
+import { timeMs } from "./syncTime.js?v=70";
+import { applyPhotoIndex, collectPhotoIndex } from "./photoIndex.js?v=70";
+import { discardPurgedTestData, isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js?v=70";
+import { enqueue, saveLocal, SOFT_DELETE_TABLES } from "./repository.js?v=70";
+import { setConfig } from "./store.js?v=70";
+import { bindRetry, setSyncStatus } from "./syncStatus.js?v=70";
 
 export { discardPurgedTestData };
 

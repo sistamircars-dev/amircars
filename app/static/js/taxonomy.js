@@ -1,8 +1,8 @@
-import { loadContext, matchesQuery, productBlob, wordsOf } from "./catalog.js?v=69";
-import { createCombo } from "./combo.js?v=69";
-import { db } from "./db.js?v=69";
-import { h, openModal } from "./dom.js?v=69";
-import { deactivateLocal, hardDeleteLocal, saveLocal } from "./repository.js?v=69";
+import { loadContext, matchesQuery, productBlob, wordsOf } from "./catalog.js?v=70";
+import { createCombo } from "./combo.js?v=70";
+import { db } from "./db.js?v=70";
+import { h, openModal } from "./dom.js?v=70";
+import { deactivateLocal, hardDeleteLocal, saveLocal } from "./repository.js?v=70";
 
 let assignTarget = { categoriaId: "", subcategoriaId: "" };
 let assignQuery = "";
