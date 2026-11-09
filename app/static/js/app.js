@@ -1,8 +1,8 @@
-import { startArchiveVault } from "./archiveVault.js?v=54";
-import { ensureFreshApp, startRuntime } from "./pwa.js?v=66";
-import { bootSync, startSyncEngine } from "./syncEngine.js?v=66";
-import { startRouter } from "./router.js?v=59";
-import { refreshRateChip, syncTodayRate } from "./bcvView.js?v=53";
+import { startArchiveVault } from "./archiveVault.js?v=67";
+import { ensureFreshApp, startRuntime } from "./pwa.js?v=67";
+import { bootSync, startSyncEngine } from "./syncEngine.js?v=67";
+import { startRouter } from "./router.js?v=67";
+import { refreshRateChip, syncTodayRate } from "./bcvView.js?v=67";
 
 async function boot() {
   const fresh = await ensureFreshApp();

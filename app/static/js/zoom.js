@@ -1,4 +1,4 @@
-import { PLACEHOLDER } from "./catalog.js";
+import { PLACEHOLDER } from "./catalog.js?v=67";
 
 export function mountZoom(stage) {
   const img = stage.querySelector("img.zoom-base");

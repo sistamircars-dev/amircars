@@ -1,8 +1,8 @@
-import { loadContext, matchesFieldFilters, matchesQuery, productBlob } from "./catalog.js";
-import { db } from "./db.js";
-import { h } from "./dom.js";
-import { downloadCsv, downloadPdf, downloadXlsx } from "./exportDocs.js";
-import { mountFieldFilters } from "./filters.js";
+import { loadContext, matchesFieldFilters, matchesQuery, productBlob } from "./catalog.js?v=67";
+import { db } from "./db.js?v=67";
+import { h } from "./dom.js?v=67";
+import { downloadCsv, downloadPdf, downloadXlsx } from "./exportDocs.js?v=67";
+import { mountFieldFilters } from "./filters.js?v=67";
 import {
   buildSalidaTicket,
   entradaLoteKey,
@@ -11,9 +11,9 @@ import {
   movePayload,
   voidEntradaFactura,
   voidSalidaTicket,
-} from "./movements.js?v=49";
-import { promptJustification } from "./promptJustification.js?v=49";
-import { printTicket } from "./salidas.js?v=50";
+} from "./movements.js?v=67";
+import { promptJustification } from "./promptJustification.js?v=67";
+import { printTicket } from "./salidas.js?v=67";
 
 const HEADERS = ["Fecha", "Tipo", "Cantidad", "Descripción", "Documento", "REF", "Bs", "Motivo", "Acciones"];
 const TIPOS = { entrada: "Entrada", salida: "Salida", falla: "Falla" };

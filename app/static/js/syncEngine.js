@@ -8,15 +8,15 @@ import {
   refreshSession,
   restoreCloudPhotos,
   uploadMediaBlob,
-} from "./api.js";
-import { flushCloudPurge } from "./archiveVault.js";
-import { db, ENTITY_TABLES, PUSH_ORDER, getMeta, nowIso, pendingCount, setMeta } from "./db.js";
-import { applyRemoteRevision } from "./pwa.js";
-import { applyPhotoIndex, collectPhotoIndex } from "./photoIndex.js";
-import { discardPurgedTestData, isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js";
-import { enqueue, saveLocal, SOFT_DELETE_TABLES } from "./repository.js";
-import { setConfig } from "./store.js";
-import { bindRetry, setSyncStatus } from "./syncStatus.js";
+} from "./api.js?v=67";
+import { flushCloudPurge } from "./archiveVault.js?v=67";
+import { db, ENTITY_TABLES, PUSH_ORDER, getMeta, nowIso, pendingCount, setMeta } from "./db.js?v=67";
+import { applyKnownRevision, applyRemoteRevision } from "./pwa.js?v=67";
+import { applyPhotoIndex, collectPhotoIndex } from "./photoIndex.js?v=67";
+import { discardPurgedTestData, isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js?v=67";
+import { enqueue, saveLocal, SOFT_DELETE_TABLES } from "./repository.js?v=67";
+import { setConfig } from "./store.js?v=67";
+import { bindRetry, setSyncStatus } from "./syncStatus.js?v=67";
 
 export { discardPurgedTestData };
 
@@ -585,6 +585,10 @@ async function flushQueue() {
     if (!result.data || result.status >= 500) {
       throw new Error((result.data && result.data.error) || `Push HTTP ${result.status}`);
     }
+    const pushed = await applyKnownRevision(result.data.revision);
+    if (pushed.changed) {
+      return;
+    }
     await applyRemaps(result.data.remaps || []);
     const done = new Set([...(result.data.accepted || []), ...(result.data.duplicates || [])]);
     const rejected = new Map((result.data.rejected || []).map((row) => [row.id, row.error]));
@@ -656,6 +660,10 @@ async function pullRemote(full = false) {
   }
   if (!result.ok || !result.data || !result.data.ok) {
     throw new Error((result.data && result.data.error) || `Pull HTTP ${result.status}`);
+  }
+  const pulled = await applyKnownRevision(result.data.revision);
+  if (pulled.changed) {
+    return;
   }
   await mergePull(result.data.tables);
   await dropDuplicateTasas();
@@ -732,6 +740,10 @@ export async function runSync(force = false) {
   startedAt = Date.now();
   setSyncStatus("syncing");
   try {
+    const fresh = await applyRemoteRevision();
+    if (fresh.changed) {
+      return;
+    }
     const alive = await healthCheck();
     if (!alive) {
       throw new Error("Sin heartbeat");
@@ -786,7 +798,6 @@ export async function runSync(force = false) {
       /* next heartbeat */
     }
     await flushCloudPurge();
-    await applyRemoteRevision();
     const leftover = await pendingCount();
     await statusFromCounts(leftover);
     try {

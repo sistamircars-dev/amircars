@@ -1,10 +1,10 @@
-import { matchesQuery, num, wordsOf } from "./catalog.js";
-import { db } from "./db.js";
-import { h } from "./dom.js";
-import { downloadTablePdf } from "./exportDocs.js?v=40";
-import { backfillSupplierLinks, formatDisplayDate, todayLocal } from "./movements.js?v=36";
-import { saveLocal } from "./repository.js";
-import { getConfig } from "./store.js";
+import { matchesQuery, num, wordsOf } from "./catalog.js?v=67";
+import { db } from "./db.js?v=67";
+import { h } from "./dom.js?v=67";
+import { downloadTablePdf } from "./exportDocs.js?v=67";
+import { backfillSupplierLinks, formatDisplayDate, todayLocal } from "./movements.js?v=67";
+import { saveLocal } from "./repository.js?v=67";
+import { getConfig } from "./store.js?v=67";
 
 function productLabel(product) {
   if (!product) {

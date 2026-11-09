@@ -7,11 +7,12 @@
     <meta name="robots" content="noindex,nofollow" />
     <meta name="theme-color" content="#D90429" />
     <meta name="csrf-token" content="{{ csrf_token() }}" />
+    <meta name="app-revision" content="{{ app_revision }}" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='img/amircars/pwa-icon-192.png') }}" />
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/amircars/pwa-icon-192.png') }}" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=18" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog.css') }}?v=32" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v={{ app_revision }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog.css') }}?v={{ app_revision }}" />
   </head>
   <body class="app-body">
     <div class="app-shell" id="app-shell">
@@ -39,7 +40,37 @@
       </aside>
       <main class="glass panel-main" id="view-root"></main>
     </div>
+    <script nonce="{{ csp_nonce() }}">
+      (function () {
+        var build = "{{ app_revision }}";
+        if (!navigator.onLine) {
+          return;
+        }
+        fetch("/api/health", { cache: "no-store", credentials: "same-origin" })
+          .then(function (response) { return response.json(); })
+          .then(function (data) {
+            if (!data || !data.revision || String(data.revision) === String(build)) {
+              return;
+            }
+            var key = "amircars-html-" + data.revision;
+            var attempts = Number(sessionStorage.getItem(key) || "0");
+            if (attempts >= 2) {
+              return;
+            }
+            sessionStorage.setItem(key, String(attempts + 1));
+            var done = function () { location.reload(); };
+            if (!("caches" in window)) {
+              done();
+              return;
+            }
+            caches.keys().then(function (keys) {
+              return Promise.all(keys.map(function (name) { return caches.delete(name); }));
+            }).then(done, done);
+          })
+          .catch(function () {});
+      })();
+    </script>
     <script src="{{ url_for('static', filename='vendor/dexie.min.js') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='js/app.js') }}?v=66"></script>
+    <script type="module" src="{{ url_for('static', filename='js/app.js') }}?v={{ app_revision }}"></script>
   </body>
 </html>

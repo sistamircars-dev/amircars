@@ -1,4 +1,4 @@
-import { db } from "./db.js";
+import { db } from "./db.js?v=67";
 
 export const PURGED_TEST_IDS = {
   proveedores: [

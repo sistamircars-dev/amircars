@@ -1,6 +1,6 @@
-import { db } from "./db.js";
-import { h } from "./dom.js";
-import { getPrefs, savePrefs } from "./store.js";
+import { db } from "./db.js?v=67";
+import { h } from "./dom.js?v=67";
+import { getPrefs, savePrefs } from "./store.js?v=67";
 
 export async function mountFieldFilters(host, { scope, onChange }) {
   const campos = await db.campos_personalizados.filter((row) => row.is_active !== false).toArray();

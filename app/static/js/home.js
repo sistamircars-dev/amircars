@@ -1,8 +1,8 @@
-import { coverFor, loadContext, PLACEHOLDER, safeImg } from "./catalog.js";
-import { h } from "./dom.js";
-import { go } from "./nav.js";
-import { openProduct } from "./productDetail.js?v=29";
-import { mountSearch } from "./searchBox.js";
+import { coverFor, loadContext, PLACEHOLDER, safeImg } from "./catalog.js?v=67";
+import { h } from "./dom.js?v=67";
+import { go } from "./nav.js?v=67";
+import { openProduct } from "./productDetail.js?v=67";
+import { mountSearch } from "./searchBox.js?v=67";
 
 export async function renderHome(root) {
   const ctx = await loadContext();

@@ -1,14 +1,14 @@
-import { attachPhotos } from "./catalog.js";
-import { createCombo } from "./combo.js";
-import { createDateField } from "./dateField.js?v=34";
-import { db } from "./db.js";
-import { h } from "./dom.js";
-import { ensureRateForDate } from "./bcvView.js?v=52";
-import { formatDisplayDate, formatRate, registerEntrada, todayLocal } from "./movements.js?v=52";
-import { mountLines } from "./opsLines.js?v=40";
-import { isPurgedTestProvider } from "./purgeCatalog.js";
-import { saveLocal } from "./repository.js";
-import { mountCampoEditor, retireCampo } from "./taxonomy.js?v=36";
+import { attachPhotos } from "./catalog.js?v=67";
+import { createCombo } from "./combo.js?v=67";
+import { createDateField } from "./dateField.js?v=67";
+import { db } from "./db.js?v=67";
+import { h } from "./dom.js?v=67";
+import { ensureRateForDate } from "./bcvView.js?v=67";
+import { formatDisplayDate, formatRate, registerEntrada, todayLocal } from "./movements.js?v=67";
+import { mountLines } from "./opsLines.js?v=67";
+import { isPurgedTestProvider } from "./purgeCatalog.js?v=67";
+import { saveLocal } from "./repository.js?v=67";
+import { mountCampoEditor, retireCampo } from "./taxonomy.js?v=67";
 
 export async function renderEntradas(root) {
   await mountEntrada(root);

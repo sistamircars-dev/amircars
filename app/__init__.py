@@ -4,6 +4,7 @@ from flask import Flask, abort, jsonify, request
 
 from app.brand import apply_brand_assets
 from app.config import Config
+from app.revision import APP_REVISION
 from app.extensions import csrf, limiter, talisman
 from app.security import apply_security_headers, is_blocked_path, register_csp
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -42,6 +43,10 @@ def create_app(config_class: type[Config] = Config) -> Flask:
         x_content_type_options=True,
         x_xss_protection=True,
     )
+
+    @app.context_processor
+    def _inject_revision() -> dict[str, str]:
+        return {"app_revision": APP_REVISION}
 
     @app.before_request
     def _block_sensitive_and_source() -> None:

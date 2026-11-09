@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
-from flask import Flask, Response
+from flask import Flask, Response, request
 
 _BLOCKED_NAMES = {
     ".env",
@@ -115,5 +115,9 @@ def apply_security_headers(app: Flask, response: Response) -> Response:
     response.headers.pop("Server", None)
     if "text/html" in (response.mimetype or ""):
         response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    path = request.path if request else ""
+    if path.startswith("/static/js/") or path.startswith("/static/css/"):
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
         response.headers["Pragma"] = "no-cache"
     return response

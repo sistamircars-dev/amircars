@@ -18,4 +18,7 @@ def health():
         revision=APP_REVISION,
         cloudinary=cloudinary_ready(),
     )
-    return jsonify(body.model_dump()), 200
+    response = jsonify(body.model_dump())
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response, 200

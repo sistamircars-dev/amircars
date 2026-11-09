@@ -1,4 +1,5 @@
-const CACHE = "amircars-offline-v55";
+const CACHE = "amircars-offline-v67";
+const APP_REVISION = "67";
 const PRECACHE = [
   "/offline.html",
   "/manifest.json",
@@ -42,8 +43,8 @@ const PRECACHE = [
   "/static/js/views.js",
   "/static/js/router.js",
   "/static/js/app.js",
-  "/static/css/app.css?v=18",
-  "/static/css/catalog.css?v=32",
+  "/static/css/app.css?v=67",
+  "/static/css/catalog.css?v=67",
   "/static/img/amircars/logo.png",
   "/static/img/amircars/pwa-icon-192.png",
   "/static/img/amircars/pwa-icon-512.png",
@@ -52,20 +53,20 @@ const PRECACHE = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches
-      .open(CACHE)
-      .then((cache) =>
-        Promise.all(
-          PRECACHE.map(async (path) => {
+    caches.open(CACHE).then((cache) =>
+      Promise.all(
+        PRECACHE.map(async (path) => {
+          try {
             const response = await fetch(new Request(path, { cache: "reload" }));
-            if (!response.ok) {
-              throw new Error(path);
+            if (response.ok) {
+              await cache.put(path, response);
             }
-            await cache.put(path, response);
-          })
-        )
+          } catch (_err) {
+            /* Un archivo caído no debe dejar el equipo en el service worker viejo. */
+          }
+        })
       )
-      .then(() => self.skipWaiting())
+    ).then(() => self.skipWaiting())
   );
 });
 
@@ -75,6 +76,12 @@ self.addEventListener("activate", (event) => {
       .keys()
       .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: "window", includeUncontrolled: true }))
+      .then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ type: "AMIRCARS_APP", revision: APP_REVISION });
+        });
+      })
   );
 });
 
@@ -120,7 +127,7 @@ self.addEventListener("fetch", (event) => {
   }
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
+      fetch(request.url, { cache: "no-store", credentials: "same-origin", redirect: "follow" })
         .then((response) => {
           const finalPath = new URL(response.url).pathname;
           if (response.ok && finalPath !== "/login") {
@@ -140,10 +147,14 @@ self.addEventListener("fetch", (event) => {
     );
     return;
   }
-  const isScript = url.pathname.startsWith("/static/js/") || url.pathname.startsWith("/static/css/");
+  const isCode = url.pathname.startsWith("/static/js/") || url.pathname.startsWith("/static/css/");
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const fetched = fetch(new Request(request, { cache: isScript ? "reload" : "default" }))
+    caches.match(request, { ignoreSearch: isCode }).then((cached) => {
+      const fetched = fetch(request.url, {
+        cache: isCode ? "no-store" : "default",
+        credentials: "same-origin",
+        redirect: "follow",
+      })
         .then((response) => {
           if (response && response.ok) {
             const copy = response.clone();
@@ -152,7 +163,7 @@ self.addEventListener("fetch", (event) => {
           return response;
         })
         .catch(() => cached);
-      return isScript ? fetched.catch(() => cached) : cached || fetched;
+      return isCode ? fetched.catch(() => cached) : cached || fetched;
     })
   );
 });

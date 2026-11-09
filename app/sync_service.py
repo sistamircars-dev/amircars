@@ -8,6 +8,7 @@ from typing import Any
 from flask import g
 from pydantic import ValidationError
 
+from app.revision import APP_REVISION
 from app.schemas import SyncPushIn, SyncPushItem
 from app.supabase_client import user_client
 from app.sync_tables import COLUMNS, IMMUTABLE_TABLES, STRIP_ON_PUSH, TABLE_ORDER
@@ -260,6 +261,7 @@ def apply_push(raw: dict[str, Any]) -> dict[str, Any]:
         "rejected": rejected,
         "remaps": remaps,
         "server_time": utc_now(),
+        "revision": APP_REVISION,
     }, 200
 
 
@@ -283,4 +285,5 @@ def apply_pull(since: str | None) -> dict[str, Any]:
         "truncated": truncated,
         "server_time": utc_now(),
         "since": since,
+        "revision": APP_REVISION,
     }

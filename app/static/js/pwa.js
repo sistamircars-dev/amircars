@@ -1,8 +1,10 @@
-import { healthCheck, runtimeInfo } from "./api.js";
+import { healthCheck, runtimeInfo } from "./api.js?v=67";
+
+/** Build que está ejecutando este archivo. Tiene que coincidir con APP_REVISION. */
+export const APP_BUILD = "67";
 
 const REVISION_KEY = "amircars-revision";
-const RELOAD_FLAG = "amircars-reloaded-for";
-const REVISION_POLL_MS = 45000;
+const REVISION_POLL_MS = 20000;
 let deferredInstall = null;
 let reloading = false;
 let revisionTimer = null;
@@ -110,7 +112,64 @@ async function activateWaitingWorker(registration) {
   return false;
 }
 
-/** Compara revisión del servidor y fuerza recarga automática (sin Ctrl+F5). */
+function buildMatches(remote) {
+  return Boolean(remote) && String(remote) === APP_BUILD;
+}
+
+/**
+ * El equipo está en línea con la nube pero corre otro build.
+ * No se fía de localStorage: eso marcaba “actualizado” antes de cargar el JS nuevo.
+ */
+async function forceAppUpdate(remote) {
+  if (reloading) {
+    return { changed: true, revision: remote, build: APP_BUILD };
+  }
+  const flag = `amircars-forced-${remote}`;
+  const attempts = Number(window.sessionStorage.getItem(flag) || "0");
+  if (attempts >= 2) {
+    return { changed: false, revision: remote, build: APP_BUILD, stuck: true };
+  }
+  window.sessionStorage.setItem(flag, String(attempts + 1));
+  await clearAppCaches();
+  if ("serviceWorker" in navigator) {
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (registration) {
+      try {
+        await registration.update();
+      } catch (_err) {
+        /* Se recarga de todos modos. */
+      }
+      await activateWaitingWorker(registration);
+    }
+  }
+  if (attempts >= 1) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("app", remote);
+    reloading = true;
+    window.location.replace(url.toString());
+  } else {
+    reloadOnce();
+  }
+  return { changed: true, revision: remote, build: APP_BUILD };
+}
+
+/** La sync (Supabase / Cloudinary) trae la revisión: si no es este build, recarga ya. */
+export async function applyKnownRevision(revision) {
+  if (!navigator.onLine) {
+    return { changed: false, offline: true };
+  }
+  if (!revision) {
+    return { changed: false };
+  }
+  const remote = String(revision);
+  if (buildMatches(remote)) {
+    rememberRevision(remote);
+    return { changed: false, revision: remote, build: APP_BUILD };
+  }
+  return forceAppUpdate(remote);
+}
+
+/** Compara el build en ejecución con /api/health y fuerza recarga (sin Ctrl+F5). */
 export async function applyRemoteRevision() {
   if (!navigator.onLine) {
     return { changed: false, offline: true };
@@ -119,33 +178,7 @@ export async function applyRemoteRevision() {
   if (!info || !info.revision) {
     return { changed: false };
   }
-  const previous = currentRevision();
-  const remote = String(info.revision);
-  if (previous && previous !== remote) {
-    const already = window.sessionStorage.getItem(RELOAD_FLAG);
-    if (already === remote) {
-      rememberRevision(remote);
-      return { changed: false, revision: remote };
-    }
-    window.sessionStorage.setItem(RELOAD_FLAG, remote);
-    rememberRevision(remote);
-    await clearAppCaches();
-    if ("serviceWorker" in navigator) {
-      const registration = await navigator.serviceWorker.getRegistration();
-      if (registration) {
-        try {
-          await registration.update();
-        } catch (_err) {
-          /* Se recarga de todos modos. */
-        }
-        await activateWaitingWorker(registration);
-      }
-    }
-    reloadOnce();
-    return { changed: true, revision: remote };
-  }
-  rememberRevision(remote);
-  return { changed: false, revision: remote };
+  return applyKnownRevision(info.revision);
 }
 
 export async function refreshServiceWorker() {
@@ -255,6 +288,14 @@ export function startRuntime() {
       applyRemoteRevision();
     }
   });
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", (event) => {
+      const data = event.data || {};
+      if (data.type === "AMIRCARS_APP") {
+        applyKnownRevision(data.revision);
+      }
+    });
+  }
   startRevisionPolling();
   if (navigator.onLine) {
     applyRemoteRevision();
