@@ -8,22 +8,22 @@ import {
   refreshSession,
   restoreCloudPhotos,
   uploadMediaBlob,
-} from "./api.js?v=70";
-import { flushCloudPurge } from "./archiveVault.js?v=70";
-import { db, ENTITY_TABLES, PUSH_ORDER, getMeta, nowIso, pendingCount, setMeta } from "./db.js?v=70";
-import { applyKnownRevision, applyRemoteRevision } from "./pwa.js?v=70";
-import { timeMs } from "./syncTime.js?v=70";
-import { applyPhotoIndex, collectPhotoIndex } from "./photoIndex.js?v=70";
-import { discardPurgedTestData, isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js?v=70";
-import { enqueue, saveLocal, SOFT_DELETE_TABLES } from "./repository.js?v=70";
-import { setConfig } from "./store.js?v=70";
-import { bindRetry, setSyncStatus } from "./syncStatus.js?v=70";
+} from "./api.js?v=71";
+import { flushCloudPurge } from "./archiveVault.js?v=71";
+import { db, ENTITY_TABLES, PUSH_ORDER, getMeta, nowIso, pendingCount, setMeta } from "./db.js?v=71";
+import { applyKnownRevision, applyRemoteRevision } from "./pwa.js?v=71";
+import { timeMs } from "./syncTime.js?v=71";
+import { applyPhotoIndex, collectPhotoIndex } from "./photoIndex.js?v=71";
+import { discardPurgedTestData, isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js?v=71";
+import { enqueue, saveLocal, SOFT_DELETE_TABLES } from "./repository.js?v=71";
+import { setConfig } from "./store.js?v=71";
+import { bindRetry, setSyncStatus } from "./syncStatus.js?v=71";
 
 export { discardPurgedTestData };
 
 const BATCH = 40;
 const MAX_PUSH_ROUNDS = 80;
-const MEDIA_BATCH = 4;
+const MEDIA_BATCH = 8;
 const IDLE_HEARTBEAT_MS = 10000;
 const PENDING_HEARTBEAT_MS = 4000;
 const PENDING_BURST_MS = 1500;
@@ -411,6 +411,31 @@ async function flushMedia() {
     };
     await saveLocal("producto_imagenes", imageRow, existing ? "update" : "insert");
     await db.offline_media_queue.delete(item.id);
+  }
+}
+
+/** Sube la cola de fotos antes que el resto, hasta vaciarla o hasta que una ronda no avance. */
+async function drainLocalMedia(token) {
+  await harvestLocalImageBlobs();
+  for (let round = 0; round < 80 && token === activeToken; round += 1) {
+    startedAt = Date.now();
+    const pending = await db.offline_media_queue.toArray();
+    if (!pending.length) {
+      return;
+    }
+    const uploadable = pending.filter((item) => isBlob(item.blob));
+    if (!uploadable.length) {
+      for (const item of pending) {
+        await db.offline_media_queue.delete(item.id);
+      }
+      return;
+    }
+    const before = uploadable.length;
+    await flushMedia();
+    const after = (await db.offline_media_queue.toArray()).filter((item) => isBlob(item.blob)).length;
+    if (after >= before) {
+      return;
+    }
   }
 }
 
@@ -1014,6 +1039,11 @@ export async function runSync(force = false) {
     }
     await discardPurgedTestData();
     try {
+      await drainLocalMedia(token);
+    } catch (_err) {
+      /* Las fotos se reintentan en el siguiente ciclo. */
+    }
+    try {
       await requeueLocalDrift();
     } catch (_err) {
       /* El push normal sigue con lo que haya en cola. */
@@ -1029,7 +1059,7 @@ export async function runSync(force = false) {
       return;
     }
     try {
-      await flushMedia();
+      await drainLocalMedia(token);
     } catch (_err) {
       /* Las fotos no deben bloquear el resto de la sync. */
     }

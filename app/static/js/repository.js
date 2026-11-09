@@ -1,5 +1,5 @@
-import { db, newId, nowIso } from "./db.js?v=70";
-import { isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js?v=70";
+import { db, newId, nowIso } from "./db.js?v=71";
+import { isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js?v=71";
 
 const SYNC_STRIP = new Set(["local_blob", "thumbnail_url", "blob"]);
 

@@ -1,11 +1,11 @@
-import { createCombo } from "./combo.js?v=70";
-import { clientComboOptions, loadRegisteredClients } from "./clients.js?v=70";
-import { createDateField } from "./dateField.js?v=70";
-import { db } from "./db.js?v=70";
-import { h } from "./dom.js?v=70";
-import { buildSalidaTicket, formatDisplayDate, formatRate, listSalidaCorrelativos, registerSalida, tasaFor, todayLocal } from "./movements.js?v=70";
-import { getRouteParams } from "./nav.js?v=70";
-import { mountLines } from "./opsLines.js?v=70";
+import { createCombo } from "./combo.js?v=71";
+import { clientComboOptions, loadRegisteredClients } from "./clients.js?v=71";
+import { createDateField } from "./dateField.js?v=71";
+import { db } from "./db.js?v=71";
+import { h } from "./dom.js?v=71";
+import { buildSalidaTicket, formatDisplayDate, formatRate, listSalidaCorrelativos, registerSalida, tasaFor, todayLocal } from "./movements.js?v=71";
+import { getRouteParams } from "./nav.js?v=71";
+import { mountLines } from "./opsLines.js?v=71";
 
 function ticketText(value) {
   return String(value ?? "")
@@ -134,10 +134,63 @@ export async function renderSalidas(root) {
   });
   const linesHost = h("div");
   let items = [];
-  let tasa = await tasaFor(fecha.value);
+  let officialTasa = await tasaFor(fecha.value);
+  let tasa = officialTasa;
   let lastTicket = null;
+  let linesApi = null;
   let seedProductId = getRouteParams().productoId || "";
-  const rateLabel = h("p", { class: "muted" }, tasa ? `Tasa ${formatDisplayDate(tasa.fecha)}: ${formatRate(tasa.usd_ves)} Bs/USD` : "Sin tasa BCV guardada. El ticket igual imprime el REF.");
+  const rateInput = h("input", {
+    class: "app-input",
+    type: "text",
+    inputmode: "decimal",
+    autocomplete: "off",
+    "aria-label": "Tasa del día en bolívares por dólar",
+    placeholder: "Bs por USD",
+  });
+  const rateHint = h("p", { class: "muted" }, "");
+
+  function parseRate(raw) {
+    const value = Number(String(raw || "").replace(",", ".").trim());
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  function paintRateHint() {
+    const current = parseRate(rateInput.value);
+    const official = officialTasa ? Number(officialTasa.usd_ves) : 0;
+    if (!current) {
+      rateHint.textContent = "Escriba la tasa en Bs por USD. Sin ella el ticket queda solo en REF.";
+      return;
+    }
+    if (official && Math.abs(current - official) > 0.0000001) {
+      rateHint.textContent = `Esta salida usará ${formatRate(current)} Bs/USD. La tasa guardada del día es ${formatRate(official)}.`;
+      return;
+    }
+    rateHint.textContent = `Tasa del día ${formatRate(current)} Bs/USD. Puede cambiarla solo para esta salida.`;
+  }
+
+  function tasaFromInput() {
+    const value = parseRate(rateInput.value);
+    if (!value) {
+      return null;
+    }
+    return {
+      fecha: (officialTasa && officialTasa.fecha) || fecha.value,
+      usd_ves: value,
+      fuente: "salida",
+    };
+  }
+
+  function applyTypedRate() {
+    tasa = tasaFromInput();
+    paintRateHint();
+    if (linesApi) {
+      linesApi.setTasa(tasa);
+    }
+  }
+
+  rateInput.value = officialTasa && officialTasa.usd_ves ? String(officialTasa.usd_ves) : "";
+  rateInput.addEventListener("input", applyTypedRate);
+  applyTypedRate();
 
   let clients = await loadRegisteredClients();
   let linking = false;
@@ -185,7 +238,7 @@ export async function renderSalidas(root) {
 
   async function paintLines() {
     const productos = (await db.productos.toArray()).filter((row) => row.is_active !== false);
-    mountLines(linesHost, {
+    linesApi = mountLines(linesHost, {
       products: productos,
       mode: "salida",
       tasa,
@@ -197,10 +250,9 @@ export async function renderSalidas(root) {
   }
 
   fecha.addEventListener("change", async () => {
-    tasa = await tasaFor(fecha.value);
-    items = [];
-    rateLabel.textContent = tasa ? `Tasa ${formatDisplayDate(tasa.fecha)}: ${formatRate(tasa.usd_ves)} Bs/USD` : "Sin tasa BCV guardada.";
-    paintLines();
+    officialTasa = await tasaFor(fecha.value);
+    rateInput.value = officialTasa && officialTasa.usd_ves ? String(officialTasa.usd_ves) : "";
+    applyTypedRate();
   });
 
   const printLast = h("button", { class: "btn ghost", type: "button" }, "Imprimir último ticket");
@@ -259,10 +311,11 @@ export async function renderSalidas(root) {
       "div",
       { class: "form-grid" },
       h("label", { class: "field-row" }, "Fecha", fecha),
+      h("label", { class: "field-row" }, "Tasa del día (Bs/USD)", rateInput),
       h("label", { class: "field-row" }, "Cliente", clienteCombo.element),
       h("label", { class: "field-row" }, "Cédula / RIF", documentoCombo.element)
     ),
-    rateLabel,
+    rateHint,
     linesHost,
     h("div", { class: "toolbar" }, save, printLast),
     status,

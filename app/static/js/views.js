@@ -1,12 +1,12 @@
-import { renderBitacora } from "./bitacora.js?v=70";
-import { renderConfig } from "./bcvView.js?v=70";
-import { renderEntradas } from "./entradas.js?v=70";
-import { renderFallas } from "./fallas.js?v=70";
-import { renderInventory } from "./inventory.js?v=70";
-import { renderPedidos } from "./pedidos.js?v=70";
-import { renderProveedores } from "./proveedores.js?v=70";
-import { renderSalidas } from "./salidas.js?v=70";
-import { renderTaxonomy } from "./taxonomy.js?v=70";
+import { renderBitacora } from "./bitacora.js?v=71";
+import { renderConfig } from "./bcvView.js?v=71";
+import { renderEntradas } from "./entradas.js?v=71";
+import { renderFallas } from "./fallas.js?v=71";
+import { renderInventory } from "./inventory.js?v=71";
+import { renderPedidos } from "./pedidos.js?v=71";
+import { renderProveedores } from "./proveedores.js?v=71";
+import { renderSalidas } from "./salidas.js?v=71";
+import { renderTaxonomy } from "./taxonomy.js?v=71";
 
 export const VIEWS = {
   inventario: { label: "Inventario", icon: "▣", render: renderInventory },

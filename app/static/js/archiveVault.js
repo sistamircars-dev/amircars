@@ -1,7 +1,7 @@
-import { purgeArchived } from "./api.js?v=70";
-import { db, getMeta, nowIso, setMeta } from "./db.js?v=70";
-import { canUseDiskFolder, ensureArchiveDir, writeJsonToDir } from "./diskStore.js?v=70";
-import { archiveFilename, buildDiskArchive, downloadArchiveFile, restoreDiskArchive } from "./localBackup.js?v=70";
+import { purgeArchived } from "./api.js?v=71";
+import { db, getMeta, nowIso, setMeta } from "./db.js?v=71";
+import { canUseDiskFolder, ensureArchiveDir, writeJsonToDir } from "./diskStore.js?v=71";
+import { archiveFilename, buildDiskArchive, downloadArchiveFile, restoreDiskArchive } from "./localBackup.js?v=71";
 
 const THRESHOLD = 0.9;
 const KEEP_MOVE_DAYS = 90;

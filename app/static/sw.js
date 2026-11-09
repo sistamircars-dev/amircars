@@ -1,5 +1,5 @@
-const CACHE = "amircars-offline-v70";
-const APP_REVISION = "70";
+const CACHE = "amircars-offline-v71";
+const APP_REVISION = "71";
 const RECOVERY_HTML = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AMIRCARS</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0B0C10;color:#F5F5F5;font-family:Segoe UI,sans-serif}main{max-width:28rem;padding:1.5rem}</style></head><body><main><h1>AMIRCARS</h1><p>Abriendo el sistema…</p></main><script>setTimeout(function(){location.reload()},4000)</script></body></html>`;
 
 function recoveryResponse() {
@@ -56,8 +56,8 @@ const PRECACHE = [
   "/static/js/views.js",
   "/static/js/router.js",
   "/static/js/app.js",
-  "/static/css/app.css?v=70",
-  "/static/css/catalog.css?v=70",
+  "/static/css/app.css?v=71",
+  "/static/css/catalog.css?v=71",
   "/static/img/amircars/logo.png",
   "/static/img/amircars/pwa-icon-192.png",
   "/static/img/amircars/pwa-icon-512.png",
