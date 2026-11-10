@@ -1,5 +1,5 @@
-import { h } from "./dom.js?v=71";
-import { formatDisplayDate, parseDisplayDate } from "./movements.js?v=71";
+import { h } from "./dom.js?v=72";
+import { formatDisplayDate, parseDisplayDate } from "./movements.js?v=72";
 
 function maskDate(value) {
   const digits = String(value || "").replace(/\D/g, "").slice(0, 8);

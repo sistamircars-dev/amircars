@@ -8,16 +8,16 @@ import {
   refreshSession,
   restoreCloudPhotos,
   uploadMediaBlob,
-} from "./api.js?v=71";
-import { flushCloudPurge } from "./archiveVault.js?v=71";
-import { db, ENTITY_TABLES, PUSH_ORDER, getMeta, nowIso, pendingCount, setMeta } from "./db.js?v=71";
-import { applyKnownRevision, applyRemoteRevision } from "./pwa.js?v=71";
-import { timeMs } from "./syncTime.js?v=71";
-import { applyPhotoIndex, collectPhotoIndex } from "./photoIndex.js?v=71";
-import { discardPurgedTestData, isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js?v=71";
-import { enqueue, saveLocal, SOFT_DELETE_TABLES } from "./repository.js?v=71";
-import { setConfig } from "./store.js?v=71";
-import { bindRetry, setSyncStatus } from "./syncStatus.js?v=71";
+} from "./api.js?v=72";
+import { flushCloudPurge } from "./archiveVault.js?v=72";
+import { db, ENTITY_TABLES, PUSH_ORDER, getMeta, nowIso, pendingCount, setMeta } from "./db.js?v=72";
+import { applyKnownRevision, applyRemoteRevision } from "./pwa.js?v=72";
+import { timeMs } from "./syncTime.js?v=72";
+import { applyPhotoIndex, collectPhotoIndex } from "./photoIndex.js?v=72";
+import { discardPurgedTestData, isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js?v=72";
+import { enqueue, saveLocal, SOFT_DELETE_TABLES } from "./repository.js?v=72";
+import { setConfig } from "./store.js?v=72";
+import { bindRetry, setSyncStatus } from "./syncStatus.js?v=72";
 
 export { discardPurgedTestData };
 
@@ -434,7 +434,11 @@ async function drainLocalMedia(token) {
     await flushMedia();
     const after = (await db.offline_media_queue.toArray()).filter((item) => isBlob(item.blob)).length;
     if (after >= before) {
-      return;
+      await wait(2500);
+      const retried = (await db.offline_media_queue.toArray()).filter((item) => isBlob(item.blob)).length;
+      if (retried >= before) {
+        return;
+      }
     }
   }
 }
@@ -643,7 +647,15 @@ function queuePayload(row) {
   };
 }
 
-/** Tras un ack, recuerda el contenido subido. Si cambió durante el envío, vuelve a la cola. */
+function stableFingerprint(row) {
+  try {
+    return rowFingerprint(JSON.parse(JSON.stringify(row || {})));
+  } catch (_err) {
+    return rowFingerprint(row || {});
+  }
+}
+
+/** El servidor ya aceptó la fila. No se vuelve a encolar por la hora del equipo. */
 async function ackQueued(row, fps) {
   let local = null;
   if (ENTITY_TABLES.includes(row.table)) {
@@ -653,13 +665,32 @@ async function ackQueued(row, fps) {
   if (!local) {
     return;
   }
-  const current = rowFingerprint(local);
-  const sent = rowFingerprint({ ...(row.payload || {}), id: row.entity_id });
-  if (sent !== current && row.table !== "movimientos_inventario") {
-    await enqueue(row.table, row.op === "insert" ? "insert" : "update", local);
-    return;
+  const key = `${row.table}:${row.entity_id}`;
+  const sent = stableFingerprint({ ...(row.payload || {}), id: row.entity_id });
+  const current = stableFingerprint(local);
+  fps[key] = sent;
+  if (current !== sent && row.table !== "movimientos_inventario") {
+    const pending = await db.sync_queue.where("entity_id").equals(row.entity_id).count();
+    if (!pending) {
+      await enqueue(row.table, "update", local);
+    }
   }
-  fps[`${row.table}:${row.entity_id}`] = current;
+}
+
+/** Reintenta desde cero lo que quedó trabado, sin borrar el trabajo local. */
+async function healStuckQueue() {
+  const rows = await db.sync_queue.toArray();
+  for (const row of rows) {
+    if ((row.attempts || 0) > 0 || row.last_error) {
+      await db.sync_queue.update(row.id, { attempts: 0, last_error: null });
+    }
+  }
+  const media = await db.offline_media_queue.toArray();
+  for (const item of media) {
+    if (isBlob(item.blob) && ((item.attempts || 0) > 0 || item.last_error)) {
+      await db.offline_media_queue.update(item.id, { attempts: 0, last_error: null });
+    }
+  }
 }
 
 async function postPush(items) {
@@ -713,8 +744,7 @@ async function settlePush(slice, result) {
     });
   }
   await saveFingerprints(fps);
-  const fresh = await applyKnownRevision(result.data.revision);
-  return { progressed, reload: Boolean(fresh.changed) };
+  return { progressed, reload: false };
 }
 
 async function flushQueue(token = activeToken) {
@@ -1039,6 +1069,11 @@ export async function runSync(force = false) {
     }
     await discardPurgedTestData();
     try {
+      await healStuckQueue();
+    } catch (_err) {
+      /* La cola sigue y se reintenta igual. */
+    }
+    try {
       await drainLocalMedia(token);
     } catch (_err) {
       /* Las fotos se reintentan en el siguiente ciclo. */
@@ -1087,6 +1122,10 @@ export async function runSync(force = false) {
       /* Si el push de catálogo falla, igual se reintenta el media. */
     }
     await flushCloudPurge();
+    const updated = await applyRemoteRevision();
+    if (updated.changed) {
+      return;
+    }
     const leftover = await pendingCount();
     await statusFromCounts(leftover);
     try {

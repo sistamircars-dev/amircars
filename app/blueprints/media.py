@@ -18,7 +18,7 @@ _UUID = re.compile(
 @bp.post("/upload")
 @login_required
 @csrf.exempt
-@limiter.limit("60 per minute")
+@limiter.limit("240 per minute")
 def upload():
     file = request.files.get("file") or request.files.get("image")
     try:

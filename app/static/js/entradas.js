@@ -1,14 +1,14 @@
-import { attachPhotos } from "./catalog.js?v=71";
-import { createCombo } from "./combo.js?v=71";
-import { createDateField } from "./dateField.js?v=71";
-import { db } from "./db.js?v=71";
-import { h } from "./dom.js?v=71";
-import { ensureRateForDate } from "./bcvView.js?v=71";
-import { formatDisplayDate, formatRate, registerEntrada, todayLocal } from "./movements.js?v=71";
-import { mountLines } from "./opsLines.js?v=71";
-import { isPurgedTestProvider } from "./purgeCatalog.js?v=71";
-import { saveLocal } from "./repository.js?v=71";
-import { mountCampoEditor, retireCampo } from "./taxonomy.js?v=71";
+import { attachPhotos } from "./catalog.js?v=72";
+import { createCombo } from "./combo.js?v=72";
+import { createDateField } from "./dateField.js?v=72";
+import { db } from "./db.js?v=72";
+import { h } from "./dom.js?v=72";
+import { ensureRateForDate } from "./bcvView.js?v=72";
+import { formatDisplayDate, formatRate, registerEntrada, todayLocal } from "./movements.js?v=72";
+import { mountLines } from "./opsLines.js?v=72";
+import { isPurgedTestProvider } from "./purgeCatalog.js?v=72";
+import { saveLocal } from "./repository.js?v=72";
+import { mountCampoEditor, retireCampo } from "./taxonomy.js?v=72";
 
 export async function renderEntradas(root) {
   await mountEntrada(root);

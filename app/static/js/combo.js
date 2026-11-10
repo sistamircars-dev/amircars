@@ -1,5 +1,5 @@
-import { matchesQuery } from "./catalog.js?v=71";
-import { h } from "./dom.js?v=71";
+import { matchesQuery } from "./catalog.js?v=72";
+import { h } from "./dom.js?v=72";
 
 const openCombos = new Set();
 let watching = false;

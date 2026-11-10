@@ -1,4 +1,4 @@
-import { db } from "./db.js?v=71";
+import { db } from "./db.js?v=72";
 
 function norm(value) {
   return String(value ?? "")

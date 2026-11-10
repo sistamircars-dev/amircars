@@ -1,9 +1,9 @@
-import { uploadMediaBlob } from "./api.js?v=71";
-import { isPurgedTestProvider } from "./purgeCatalog.js?v=71";
-import { db, newId, nowIso } from "./db.js?v=71";
-import { promptJustification } from "./promptJustification.js?v=71";
-import { queueOfflineImage, saveLocal } from "./repository.js?v=71";
-import { getTasa } from "./store.js?v=71";
+import { uploadMediaBlob } from "./api.js?v=72";
+import { isPurgedTestProvider } from "./purgeCatalog.js?v=72";
+import { db, newId, nowIso } from "./db.js?v=72";
+import { promptJustification } from "./promptJustification.js?v=72";
+import { queueOfflineImage, saveLocal } from "./repository.js?v=72";
+import { getTasa } from "./store.js?v=72";
 
 export const PLACEHOLDER = "/static/img/amircars/logo.png";
 
