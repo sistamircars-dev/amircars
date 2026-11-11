@@ -19,6 +19,8 @@ def login_required(view: F) -> F:
             g.current_user = None
             if _wants_json():
                 return jsonify({"ok": False, "error": "No autenticado"}), 401
+            if request.path == "/rescate":
+                return redirect(url_for("auth.login", next="/rescate"))
             return redirect(url_for("auth.login"))
         g.current_user = user
         return view(*args, **kwargs)

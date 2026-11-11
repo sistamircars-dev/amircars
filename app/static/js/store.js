@@ -1,5 +1,5 @@
-import { db, newId, nowIso } from "./db.js?v=72";
-import { saveLocal } from "./repository.js?v=72";
+import { db, newId, nowIso } from "./db.js?v=73";
+import { saveLocal } from "./repository.js?v=73";
 
 export async function getConfig(clave, fallback = null) {
   const row = await db.configuracion_sistema.where("clave").equals(clave).first();

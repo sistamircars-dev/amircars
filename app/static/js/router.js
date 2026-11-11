@@ -1,6 +1,6 @@
-import { h } from "./dom.js?v=72";
-import { clearRouteParams, onNavigate } from "./nav.js?v=72";
-import { VIEWS } from "./views.js?v=72";
+import { h } from "./dom.js?v=73";
+import { clearRouteParams, onNavigate } from "./nav.js?v=73";
+import { VIEWS } from "./views.js?v=73";
 
 function canSoftRefresh() {
   if (document.querySelector(".modal-back")) {

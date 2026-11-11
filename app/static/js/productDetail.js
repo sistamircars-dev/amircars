@@ -1,11 +1,11 @@
-import { deleteProduct, formatPair, galleryFor, loadContext, PLACEHOLDER, requestRestock, safeImg } from "./catalog.js?v=72";
-import { db } from "./db.js?v=72";
-import { h } from "./dom.js?v=72";
-import { formatDisplayDate, lastArrivalByProduct } from "./movements.js?v=72";
-import { go } from "./nav.js?v=72";
-import { openProductForm } from "./productForm.js?v=72";
-import { getTasa } from "./store.js?v=72";
-import { mountZoom } from "./zoom.js?v=72";
+import { deleteProduct, formatPair, galleryFor, loadContext, PLACEHOLDER, requestRestock, safeImg } from "./catalog.js?v=73";
+import { db } from "./db.js?v=73";
+import { h } from "./dom.js?v=73";
+import { formatDisplayDate, lastArrivalByProduct } from "./movements.js?v=73";
+import { go } from "./nav.js?v=73";
+import { openProductForm } from "./productForm.js?v=73";
+import { getTasa } from "./store.js?v=73";
+import { mountZoom } from "./zoom.js?v=73";
 
 export async function openProduct(productId) {
   const ctx = await loadContext();

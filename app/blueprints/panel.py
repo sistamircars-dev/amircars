@@ -9,3 +9,9 @@ bp = Blueprint("panel", __name__)
 @login_required
 def index():
     return render_template("panel.html")
+
+
+@bp.get("/rescate")
+@login_required
+def rescate():
+    return render_template("rescate.html")

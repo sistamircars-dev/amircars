@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AMIRCARS — Subir cola</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <meta name="csrf-token" content="{{ csrf_token() }}" />
+    <style>
+      body { margin: 0; background: #0b0c10; color: #f5f5f5; font-family: "Segoe UI", sans-serif; }
+      main { max-width: 40rem; margin: 0 auto; padding: 1.5rem; }
+      h1 { font-size: 1.4rem; margin: 0 0 0.4rem; }
+      p { line-height: 1.45; }
+      button { background: #d90429; color: white; border: 0; border-radius: 8px; padding: 0.8rem 1rem; font-size: 1rem; cursor: pointer; }
+      button[disabled] { opacity: 0.6; cursor: default; }
+      #count { font-size: 1.8rem; margin: 0.6rem 0; }
+      #log { white-space: pre-wrap; background: #15171e; border-radius: 8px; padding: 0.8rem; min-height: 8rem; font-size: 0.9rem; }
+      a { color: #ff8fa3; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Subir cambios de esta computadora</h1>
+      <p>Esto envía la cola guardada en este navegador. No borra ventas, productos ni proveedores. Cierra la ventana normal de AMIRCARS antes de dejar esta abierta.</p>
+      <p id="count">Revisando la cola…</p>
+      <p><button id="go" type="button" disabled>Subir ahora</button></p>
+      <p id="gone" hidden><button id="drop-empty" type="button">Quitar de la cola las fotos que ya no tienen archivo</button></p>
+      <div id="log"></div>
+      <p><a href="/">Volver al sistema</a> cuando el contador llegue a cero.</p>
+    </main>
+    <script>
+      const ORDER = ["categorias","subcategorias","campos_personalizados","proveedores","productos","producto_proveedores","producto_imagenes","historico_ref","tasas_bcv","configuracion_sistema","solicitudes_restock","preferencias_usuario","movimientos_inventario"];
+      const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const SKIP = new Set(["updated_at","created_at","created_by","local_blob","thumbnail_url","blob"]);
+      const countEl = document.getElementById("count");
+      const logEl = document.getElementById("log");
+      const go = document.getElementById("go");
+      const lines = [];
+
+      function log(text) {
+        lines.push(text);
+        logEl.textContent = lines.slice(-40).join("\n");
+      }
+      function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+      function ask(req) {
+        return new Promise((resolve, reject) => {
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+      }
+      function openDb() {
+        return ask(indexedDB.open("amircars"));
+      }
+      function store(db, name, mode) {
+        return db.transaction(name, mode).objectStore(name);
+      }
+      function csrf() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta && meta.content) return meta.content;
+        const match = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/);
+        return match ? decodeURIComponent(match[1]) : "";
+      }
+      function canonical(value) {
+        if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
+        if (value && typeof value === "object") {
+          return "{" + Object.keys(value).sort().map((key) => key + ":" + canonical(value[key])).join(",") + "}";
+        }
+        if (typeof value === "string") return JSON.stringify(value.trim());
+        return JSON.stringify(value == null ? null : value);
+      }
+      function fingerprint(row) {
+        let copy = row || {};
+        try { copy = JSON.parse(JSON.stringify(copy)); } catch (_err) { copy = row || {}; }
+        const raw = Object.keys(copy).filter((key) => !SKIP.has(key) && key.charAt(0) !== "_").sort().map((key) => key + ":" + canonical(copy[key])).join("|");
+        let hash = 5381;
+        for (let i = 0; i < raw.length; i += 1) hash = (hash * 33) ^ raw.charCodeAt(i);
+        return (hash >>> 0).toString(36);
+      }
+      async function remember(db, table, id, row) {
+        if (!row) return;
+        const current = (await ask(store(db, "meta", "readonly").get("synced_fp"))) || { key: "synced_fp", value: {} };
+        const fps = current.value && typeof current.value === "object" ? current.value : {};
+        fps[table + ":" + id] = fingerprint(row);
+        await ask(store(db, "meta", "readwrite").put({ key: "synced_fp", value: fps }));
+        await ask(store(db, "meta", "readwrite").put({ key: "synced_fp_ready", value: true }));
+      }
+      async function api(url, options) {
+        const headers = options.headers || {};
+        const token = csrf();
+        if (token) headers["X-CSRFToken"] = token;
+        let response = await fetch(url, { method: options.method, credentials: "same-origin", headers, body: options.body, cache: "no-store" });
+        if (response.status === 401) {
+          await fetch("/api/auth/refresh", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: "{}" });
+          response = await fetch(url, { method: options.method, credentials: "same-origin", headers, body: options.body, cache: "no-store" });
+        }
+        const text = await response.text();
+        let data = {};
+        if (text) { try { data = JSON.parse(text); } catch (_err) { data = { error: text.slice(0, 180) }; } }
+        return { status: response.status, data };
+      }
+      function cleanPayload(source, id) {
+        const copy = {};
+        Object.keys(source || {}).forEach((key) => {
+          if (SKIP.has(key) && key !== "updated_at" && key !== "created_at") return;
+          const value = source[key];
+          if (typeof value === "function" || (typeof Blob !== "undefined" && value instanceof Blob)) return;
+          copy[key] = value;
+        });
+        copy.id = id;
+        if (!copy.updated_at) copy.updated_at = new Date().toISOString();
+        return JSON.parse(JSON.stringify(copy));
+      }
+
+      let db;
+      let emptyPhotos = [];
+
+      async function snapshot() {
+        const ops = await ask(store(db, "sync_queue", "readonly").getAll());
+        const media = await ask(store(db, "offline_media_queue", "readonly").getAll());
+        const withFile = media.filter((item) => item && item.blob instanceof Blob);
+        emptyPhotos = media.filter((item) => !item || !(item.blob instanceof Blob));
+        const by = {};
+        ops.forEach((row) => { by[row.table] = (by[row.table] || 0) + 1; });
+        const parts = Object.keys(by).map((name) => by[name] + " " + name);
+        if (withFile.length) parts.push(withFile.length + " fotos con archivo");
+        if (emptyPhotos.length) parts.push(emptyPhotos.length + " fotos sin archivo");
+        countEl.textContent = (ops.length + media.length) + " pendientes" + (parts.length ? " (" + parts.join(", ") + ")" : "");
+        document.getElementById("gone").hidden = emptyPhotos.length === 0;
+        return { ops, media: withFile };
+      }
+
+      function itemFrom(row, local) {
+        const id = String(row.entity_id || (row.payload && row.payload.id) || "").trim();
+        if (!UUID.test(id)) return null;
+        let op = row.op === "delete" || row.op === "insert" || row.op === "update" ? row.op : "update";
+        if (row.table === "movimientos_inventario") op = "insert";
+        const source = op === "delete" ? (row.payload || {}) : (local || row.payload || {});
+        const payload = cleanPayload(source, id);
+        if (op === "delete") payload.is_active = false;
+        return { id, table: row.table, op, payload, updated_at: payload.updated_at, queueIds: [] };
+      }
+
+      async function collapse(ops) {
+        const best = new Map();
+        for (const row of ops) {
+          const id = String(row.entity_id || "").toLowerCase();
+          const key = row.table + ":" + id;
+          const prev = best.get(key);
+          if (!prev || String(row.created_at || "") >= String(prev.created_at || "")) best.set(key, row);
+        }
+        const items = [];
+        for (const row of best.values()) {
+          const local = await ask(store(db, row.table, "readonly").get(row.entity_id)).catch(() => null);
+          const item = itemFrom(row, local);
+          if (!item) {
+            log("Se deja en cola un registro con id inválido (" + (row.table || "?") + ").");
+            continue;
+          }
+          item.queueIds = ops.filter((other) => other.table === row.table && String(other.entity_id).toLowerCase() === item.id.toLowerCase()).map((other) => other.id);
+          item.local = local;
+          items.push(item);
+        }
+        items.sort((a, b) => ORDER.indexOf(a.table) - ORDER.indexOf(b.table));
+        return items;
+      }
+
+      async function dropQueue(ids) {
+        for (const id of ids) {
+          await ask(store(db, "sync_queue", "readwrite").delete(id));
+        }
+      }
+
+      async function pushBatch(items) {
+        const body = JSON.stringify({ items: items.map((item) => ({ id: item.id, table: item.table, op: item.op, payload: item.payload, updated_at: item.updated_at })) });
+        return api("/api/sync/push", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body });
+      }
+
+      async function applyResult(items, result) {
+        if (result.status === 401) throw new Error("La sesión venció. Entra de nuevo y pulsa Subir ahora.");
+        if (result.status === 429 || result.status >= 500) return false;
+        const data = result.data || {};
+        if (result.status === 400 && items.length > 1) return null;
+        const done = new Set([...(data.accepted || []), ...(data.duplicates || [])].map((id) => String(id).toLowerCase()));
+        const rejected = new Map((data.rejected || []).map((row) => [String(row.id).toLowerCase(), row.error || "Rechazado"]));
+        if (!data.ok && result.status >= 400 && items.length === 1) {
+          rejected.set(items[0].id.toLowerCase(), data.error || ("HTTP " + result.status));
+        }
+        for (const item of items) {
+          const key = item.id.toLowerCase();
+          if (done.has(key)) {
+            await dropQueue(item.queueIds);
+            await remember(db, item.table, item.id, item.local || item.payload);
+            continue;
+          }
+          const error = rejected.get(key) || data.error || "";
+          if (error) log(item.table + " " + item.id.slice(0, 8) + ": " + String(error).slice(0, 180));
+        }
+        return true;
+      }
+
+      async function uploadOps(ops) {
+        const items = await collapse(ops);
+        let sent = 0;
+        for (let i = 0; i < items.length; i += 15) {
+          const slice = items.slice(i, i + 15);
+          let result = await pushBatch(slice);
+          let settled = await applyResult(slice, result);
+          if (settled === false) {
+            await sleep(4000);
+            result = await pushBatch(slice);
+            settled = await applyResult(slice, result);
+          }
+          if (settled === null || settled === false) {
+            for (const item of slice) {
+              const one = await pushBatch([item]);
+              await applyResult([item], one);
+              await sleep(200);
+            }
+          }
+          sent += slice.length;
+          countEl.textContent = "Enviados " + Math.min(sent, items.length) + " de " + items.length + " cambios…";
+          await sleep(300);
+        }
+      }
+
+      async function uploadPhotos(media) {
+        for (let index = 0; index < media.length; index += 1) {
+          const item = media[index];
+          const form = new FormData();
+          const token = csrf();
+          if (token) form.append("csrf_token", token);
+          form.append("file", item.blob, item.filename || "pieza.jpg");
+          if (item.id) form.append("image_id", item.id);
+          if (item.producto_id) form.append("producto_id", item.producto_id);
+          const result = await api("/api/media/upload", { method: "POST", headers: { Accept: "application/json" }, body: form });
+          if (!result.data || !result.data.ok) {
+            log("Foto " + String(item.id || "").slice(0, 8) + ": " + ((result.data && result.data.error) || ("HTTP " + result.status)));
+            continue;
+          }
+          const existing = item.id ? await ask(store(db, "producto_imagenes", "readonly").get(item.id)).catch(() => null) : null;
+          const image = Object.assign({}, existing || {}, {
+            id: item.id,
+            producto_id: item.producto_id,
+            cloudinary_url: result.data.url,
+            cloudinary_public_id: result.data.public_id,
+            thumbnail_url: result.data.thumbnail_url,
+            alt_text: item.alt_text || (existing && existing.alt_text) || "",
+            orden: item.orden || 0,
+            is_cover: Boolean(item.is_cover) || Boolean(existing && existing.is_cover),
+            is_active: true,
+            updated_at: new Date().toISOString()
+          });
+          await ask(store(db, "producto_imagenes", "readwrite").put(image));
+          const queued = { id: image.id, table: "producto_imagenes", op: existing ? "update" : "insert", payload: cleanPayload(image, image.id), updated_at: image.updated_at, queueIds: [], local: image };
+          const pushed = await pushBatch([queued]);
+          const pushedData = pushed.data || {};
+          const accepted = new Set([...(pushedData.accepted || []), ...(pushedData.duplicates || [])].map((id) => String(id).toLowerCase()));
+          await applyResult([queued], pushed);
+          if (accepted.has(String(image.id).toLowerCase())) {
+            await ask(store(db, "offline_media_queue", "readwrite").delete(item.id));
+          }
+          countEl.textContent = "Fotos subidas " + (index + 1) + " de " + media.length + "…";
+          await sleep(250);
+        }
+      }
+
+      go.addEventListener("click", async () => {
+        go.disabled = true;
+        try {
+          const snap = await snapshot();
+          log("Empieza la subida. No cierres esta ventana.");
+          await uploadOps(snap.ops);
+          await uploadPhotos(snap.media);
+          const left = await snapshot();
+          log(left.ops.length || left.media.length ? "Quedaron pendientes. El detalle está arriba." : "Listo. La cola de cambios quedó vacía.");
+        } catch (err) {
+          log(String(err && err.message ? err.message : err));
+        } finally {
+          go.disabled = false;
+          go.textContent = "Reintentar lo que quedó";
+        }
+      });
+
+      document.getElementById("drop-empty").addEventListener("click", async () => {
+        for (const item of emptyPhotos) {
+          if (item && item.id) await ask(store(db, "offline_media_queue", "readwrite").delete(item.id));
+        }
+        log("Se quitaron de la cola las fotos sin archivo. El artículo sigue guardado.");
+        await snapshot();
+      });
+
+      openDb().then(async (opened) => {
+        db = opened;
+        if (!db.objectStoreNames.contains("sync_queue")) {
+          countEl.textContent = "Este navegador no tiene datos de AMIRCARS. Ábrelo en el mismo navegador donde usan el sistema.";
+          return;
+        }
+        await snapshot();
+        go.disabled = false;
+      }).catch(() => {
+        countEl.textContent = "No pude leer los datos locales. Usa el mismo navegador donde está instalada la app.";
+      });
+    </script>
+  </body>
+</html>

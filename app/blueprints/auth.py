@@ -68,22 +68,29 @@ def _clear_auth_cookies(response) -> None:
         response.delete_cookie(name, path=cfg["JWT_COOKIE_PATH"], samesite="Strict")
 
 
+def _safe_next(value: str | None) -> str | None:
+    if value == "/rescate":
+        return "/rescate"
+    return None
+
+
 @bp.route("/login", methods=["GET", "POST"])
 @limiter.limit("5 per minute", methods=["POST"])
 def login():
     form = LoginForm()
+    nxt = _safe_next(request.values.get("next"))
     if request.method == "GET":
-        return render_template("login.html", form=form)
+        return render_template("login.html", form=form, next=nxt)
 
     if not form.validate_on_submit():
         flash("Credenciales inválidas o token CSRF ausente.", "error")
-        return render_template("login.html", form=form), 400
+        return render_template("login.html", form=form, next=nxt), 400
 
     try:
         payload = LoginIn(email=form.email.data, password=form.password.data)
     except Exception:
         flash("Datos de acceso inválidos.", "error")
-        return render_template("login.html", form=form), 400
+        return render_template("login.html", form=form, next=nxt), 400
 
     try:
         client = make_client()
@@ -92,15 +99,15 @@ def login():
         )
     except Exception:
         flash("No se pudo iniciar sesión. Verifique correo y contraseña.", "error")
-        return render_template("login.html", form=form), 401
+        return render_template("login.html", form=form, next=nxt), 401
 
     session = getattr(result, "session", None)
     user = getattr(result, "user", None)
     if session is None or user is None:
         flash("Supabase no devolvió una sesión válida.", "error")
-        return render_template("login.html", form=form), 401
+        return render_template("login.html", form=form, next=nxt), 401
 
-    response = redirect(url_for("panel.index"))
+    response = redirect(nxt or url_for("panel.index"))
     _set_auth_cookies(response, session)
     return response
 

@@ -1,6 +1,6 @@
-import { createProduct, deleteProduct, galleryFor, loadContext, removeProductImage, safeImg, updateProduct } from "./catalog.js?v=72";
-import { h } from "./dom.js?v=72";
-import { promptCategoria, promptSubcategoria } from "./taxonomy.js?v=72";
+import { createProduct, deleteProduct, galleryFor, loadContext, removeProductImage, safeImg, updateProduct } from "./catalog.js?v=73";
+import { h } from "./dom.js?v=73";
+import { promptCategoria, promptSubcategoria } from "./taxonomy.js?v=73";
 
 export function dynamicFields(campos, values = {}) {
   const box = h("div", { class: "dynamic-fields" });

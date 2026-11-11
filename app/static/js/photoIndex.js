@@ -1,6 +1,6 @@
-import { db, nowIso } from "./db.js?v=72";
-import { decodeValue } from "./localBackup.js?v=72";
-import { enqueue } from "./repository.js?v=72";
+import { db, nowIso } from "./db.js?v=73";
+import { decodeValue } from "./localBackup.js?v=73";
+import { enqueue } from "./repository.js?v=73";
 
 export const PHOTO_INDEX_FORMAT = "amircars-fotos";
 export const PHOTO_INDEX_VERSION = 1;

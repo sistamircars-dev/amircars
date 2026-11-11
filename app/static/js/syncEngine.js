@@ -8,21 +8,21 @@ import {
   refreshSession,
   restoreCloudPhotos,
   uploadMediaBlob,
-} from "./api.js?v=72";
-import { flushCloudPurge } from "./archiveVault.js?v=72";
-import { db, ENTITY_TABLES, PUSH_ORDER, getMeta, nowIso, pendingCount, setMeta } from "./db.js?v=72";
-import { applyKnownRevision, applyRemoteRevision } from "./pwa.js?v=72";
-import { timeMs } from "./syncTime.js?v=72";
-import { applyPhotoIndex, collectPhotoIndex } from "./photoIndex.js?v=72";
-import { discardPurgedTestData, isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js?v=72";
-import { enqueue, saveLocal, SOFT_DELETE_TABLES } from "./repository.js?v=72";
-import { setConfig } from "./store.js?v=72";
-import { bindRetry, setSyncStatus } from "./syncStatus.js?v=72";
+} from "./api.js?v=73";
+import { flushCloudPurge } from "./archiveVault.js?v=73";
+import { db, ENTITY_TABLES, PUSH_ORDER, getMeta, nowIso, pendingCount, setMeta } from "./db.js?v=73";
+import { applyKnownRevision, applyRemoteRevision } from "./pwa.js?v=73";
+import { timeMs } from "./syncTime.js?v=73";
+import { applyPhotoIndex, collectPhotoIndex } from "./photoIndex.js?v=73";
+import { discardPurgedTestData, isPurgedTestProduct, isPurgedTestProvider } from "./purgeCatalog.js?v=73";
+import { enqueue, saveLocal, SOFT_DELETE_TABLES } from "./repository.js?v=73";
+import { setConfig } from "./store.js?v=73";
+import { bindRetry, setSyncStatus } from "./syncStatus.js?v=73";
 
 export { discardPurgedTestData };
 
 const BATCH = 40;
-const MAX_PUSH_ROUNDS = 80;
+const MAX_PUSH_ROUNDS = 500;
 const MEDIA_BATCH = 8;
 const IDLE_HEARTBEAT_MS = 10000;
 const PENDING_HEARTBEAT_MS = 4000;
@@ -655,26 +655,23 @@ function stableFingerprint(row) {
   }
 }
 
-/** El servidor ya aceptó la fila. No se vuelve a encolar por la hora del equipo. */
+/** El servidor ya aceptó la fila. Se quita de la cola y no se vuelve a meter. */
 async function ackQueued(row, fps) {
   let local = null;
   if (ENTITY_TABLES.includes(row.table)) {
     local = await db.table(row.table).get(row.entity_id);
   }
+  const dupes = await db.sync_queue.where("entity_id").equals(row.entity_id).toArray();
+  for (const extra of dupes) {
+    if (extra.table === row.table) {
+      await db.sync_queue.delete(extra.id);
+    }
+  }
   await db.sync_queue.delete(row.id);
   if (!local) {
     return;
   }
-  const key = `${row.table}:${row.entity_id}`;
-  const sent = stableFingerprint({ ...(row.payload || {}), id: row.entity_id });
-  const current = stableFingerprint(local);
-  fps[key] = sent;
-  if (current !== sent && row.table !== "movimientos_inventario") {
-    const pending = await db.sync_queue.where("entity_id").equals(row.entity_id).count();
-    if (!pending) {
-      await enqueue(row.table, "update", local);
-    }
-  }
+  fps[`${row.table}:${row.entity_id}`] = stableFingerprint(local);
 }
 
 /** Reintenta desde cero lo que quedó trabado, sin borrar el trabajo local. */
@@ -753,6 +750,7 @@ async function flushQueue(token = activeToken) {
   const skip = new Set();
   let rateWaits = 0;
   for (let round = 0; round < MAX_PUSH_ROUNDS; round += 1) {
+    startedAt = Date.now();
     if (token !== activeToken || !isOnline()) {
       return;
     }

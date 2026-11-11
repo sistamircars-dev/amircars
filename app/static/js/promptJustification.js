@@ -1,4 +1,4 @@
-import { h } from "./dom.js?v=72";
+import { h } from "./dom.js?v=73";
 
 export function promptJustification(title, hint = "Indique el motivo. Este texto queda en la bitácora.") {
   return new Promise((resolve) => {
